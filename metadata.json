@@ -1,0 +1,6 @@
+{
+  "name": "AI 블로그 & 썸네일 생성기",
+  "description": "본문 사진과 레퍼런스 PDF를 분석하여 맞춤형 마크다운 블로그 포스트와 썸네일 카피를 자동 생성합니다.",
+  "requestFramePermissions": [],
+  "majorCapabilities": ["MAJOR_CAPABILITY_SERVER_SIDE_GEMINI_API"]
+}
