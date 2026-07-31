@@ -5,6 +5,8 @@ import { BlogPreview } from "./components/BlogPreview";
 import { ThumbnailPreview } from "./components/ThumbnailPreview";
 import { FormState, ThumbnailData } from "./types";
 import { FileText, ImageIcon, AlertCircle, Sparkles, CheckCircle2 } from "lucide-react";
+import { FooterAdSlot } from "./components/ads/FooterAdSlot";
+import { RewardAdModal } from "./components/ads/RewardAdModal";
 
 export default function App() {
   const [formState, setFormState] = useState<FormState>({
@@ -22,6 +24,7 @@ export default function App() {
   const [activeTab, setActiveTab] = useState<"blog" | "thumbnail">("blog");
   const [isGenerating, setIsGenerating] = useState(false);
   const [errorMessage, setErrorMessage] = useState<string | null>(null);
+  const [showRewardAdModal, setShowRewardAdModal] = useState(false);
 
   const [blogContent, setBlogContent] = useState<string>("");
   const [thumbnailData, setThumbnailData] = useState<ThumbnailData>({
@@ -77,8 +80,8 @@ export default function App() {
     }
   };
 
-  // Submit to Backend API (/api/generate)
-  const handleSubmit = async () => {
+  // Gate: public API Key users must watch a rewarded ad before each generation
+  const handleSubmit = () => {
     if (!hasCustomKey && usesRemaining <= 0) {
       setErrorMessage(
         "오늘의 공용 API 무료 이용 횟수(3회)를 모두 사용하셨습니다. 개인 Gemini API Key를 입력하시면 제한 없이 무제한 사용하실 수 있습니다."
@@ -92,6 +95,16 @@ export default function App() {
       }
     }
 
+    if (!hasCustomKey) {
+      setShowRewardAdModal(true);
+      return;
+    }
+
+    performGenerate();
+  };
+
+  // Submit to Backend API (/api/generate)
+  const performGenerate = async () => {
     try {
       setIsGenerating(true);
       setErrorMessage(null);
@@ -279,9 +292,20 @@ export default function App() {
                 )}
               </div>
             )}
+
+            <FooterAdSlot />
           </div>
         </div>
       </main>
+
+      <RewardAdModal
+        isOpen={showRewardAdModal}
+        onClose={() => setShowRewardAdModal(false)}
+        onComplete={() => {
+          setShowRewardAdModal(false);
+          performGenerate();
+        }}
+      />
     </div>
   );
 }

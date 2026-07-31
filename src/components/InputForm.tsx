@@ -15,6 +15,7 @@ import {
   ShieldAlert,
 } from "lucide-react";
 import { FormState, UploadedPhoto } from "../types";
+import { HeaderAdSlot } from "./ads/HeaderAdSlot";
 
 interface InputFormProps {
   formState: FormState;
@@ -115,6 +116,8 @@ export const InputForm: React.FC<InputFormProps> = ({
 
   return (
     <div className="flex flex-col gap-5 overflow-hidden">
+      <HeaderAdSlot />
+
       {/* 1. API Key & Security Settings Card */}
       <div className="bg-white rounded-xl border border-gray-200 p-4 shadow-sm">
         <div className="flex justify-between items-center mb-3">
