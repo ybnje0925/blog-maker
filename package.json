@@ -25,6 +25,7 @@
     "react-dom": "^19.0.1",
     "react-markdown": "^10.1.0",
     "react-rnd": "^10.5.3",
+    "react-router-dom": "^7.18.2",
     "remark-gfm": "^4.0.1",
     "vite": "^6.2.3"
   },

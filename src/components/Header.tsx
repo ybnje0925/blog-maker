@@ -1,5 +1,6 @@
 import React from "react";
-import { Sparkles, RefreshCw, Key, ShieldCheck } from "lucide-react";
+import { Link } from "react-router-dom";
+import { Key, RefreshCw, ShieldCheck } from "lucide-react";
 
 interface HeaderProps {
   onReset: () => void;
@@ -8,54 +9,46 @@ interface HeaderProps {
   usesRemaining: number;
 }
 
-export const Header: React.FC<HeaderProps> = ({
-  onReset,
-  isGenerating,
-  hasCustomKey,
-  usesRemaining,
-}) => {
+export const Header: React.FC<HeaderProps> = ({ onReset, isGenerating, hasCustomKey, usesRemaining }) => {
   return (
-    <header className="h-16 px-4 sm:px-8 flex items-center justify-between border-b border-gray-200 bg-white sticky top-0 z-30 shadow-2xs">
-      <div className="flex items-center gap-3">
-        <div className="w-8 h-8 bg-blue-600 rounded-lg flex items-center justify-center text-white font-bold shadow-xs">
-          A
-        </div>
-        <div>
-          <h1 className="text-lg font-bold tracking-tight text-slate-800 flex items-center gap-2">
-            <span>AI Blog Studio</span>
-            <span className="text-[11px] font-semibold bg-blue-50 text-blue-600 border border-blue-200 px-2 py-0.5 rounded-full">
-              v1.5-flash-ready
-            </span>
-          </h1>
-          <p className="text-xs text-slate-500 hidden sm:block">
-            개인 전용 AI 블로그 포스트 & 썸네일 자동 생성기
-          </p>
-        </div>
-      </div>
-
-      <div className="flex items-center gap-3">
-        {/* API Usage Status Badge */}
-        {hasCustomKey ? (
-          <div className="hidden sm:flex items-center gap-1.5 px-2.5 py-1 bg-emerald-50 text-emerald-700 border border-emerald-200 text-xs font-semibold rounded-full">
-            <ShieldCheck className="w-3.5 h-3.5" />
-            <span>개인 API Key (무제한)</span>
+    <header className="sticky top-0 z-30 border-b border-slate-200 bg-white/95 px-4 shadow-sm backdrop-blur sm:px-8">
+      <div className="mx-auto flex h-16 max-w-7xl items-center justify-between gap-4">
+        <Link to="/" className="flex items-center gap-3">
+          <div className="flex h-9 w-9 items-center justify-center rounded-lg bg-blue-700 text-sm font-black text-white">BD</div>
+          <div>
+            <h1 className="flex items-center gap-2 text-lg font-black tracking-tight text-slate-950">
+              BlogDraft
+              <span className="hidden rounded-full border border-blue-200 bg-blue-50 px-2 py-0.5 text-[11px] font-bold text-blue-700 sm:inline">
+                AI 블로그 초안 & 썸네일 에디터
+              </span>
+            </h1>
+            <p className="hidden text-xs text-slate-500 sm:block">AI가 정리하고, 내가 완성합니다.</p>
           </div>
-        ) : (
-          <div className="hidden sm:flex items-center gap-1.5 px-2.5 py-1 bg-blue-50 text-blue-700 border border-blue-200 text-xs font-semibold rounded-full">
-            <Key className="w-3.5 h-3.5 text-blue-600" />
-            <span>오늘의 무료 잔여: {usesRemaining}/3회</span>
-          </div>
-        )}
+        </Link>
 
-        <button
-          onClick={onReset}
-          disabled={isGenerating}
-          className="inline-flex items-center gap-1.5 px-3 py-1.5 text-xs font-bold text-slate-600 hover:text-slate-900 bg-gray-100 hover:bg-gray-200 rounded-lg transition disabled:opacity-50 cursor-pointer"
-          title="모든 입력 및 결과 초기화"
-        >
-          <RefreshCw className="w-3.5 h-3.5" />
-          <span className="hidden sm:inline">초기화</span>
-        </button>
+        <nav className="hidden items-center gap-4 text-xs font-bold text-slate-600 md:flex">
+          <Link to="/" className="hover:text-blue-700">초안 만들기</Link>
+          <Link to="/guide" className="hover:text-blue-700">블로그 작성 가이드</Link>
+          <Link to="/about" className="hover:text-blue-700">서비스 소개</Link>
+        </nav>
+
+        <div className="flex items-center gap-2">
+          {hasCustomKey ? (
+            <div className="hidden items-center gap-1.5 rounded-full border border-emerald-200 bg-emerald-50 px-2.5 py-1 text-xs font-bold text-emerald-700 sm:flex">
+              <ShieldCheck className="h-3.5 w-3.5" />
+              개인 API Key
+            </div>
+          ) : (
+            <div className="hidden items-center gap-1.5 rounded-full border border-blue-200 bg-blue-50 px-2.5 py-1 text-xs font-bold text-blue-700 sm:flex">
+              <Key className="h-3.5 w-3.5" />
+              오늘 남은 생성 {usesRemaining}/3
+            </div>
+          )}
+          <button type="button" onClick={onReset} disabled={isGenerating} className="inline-flex items-center gap-1.5 rounded-lg bg-slate-100 px-3 py-2 text-xs font-black text-slate-600 transition hover:bg-slate-200 hover:text-slate-950 disabled:opacity-50" title="입력과 결과 초기화">
+            <RefreshCw className="h-3.5 w-3.5" />
+            <span className="hidden sm:inline">초기화</span>
+          </button>
+        </div>
       </div>
     </header>
   );

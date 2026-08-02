@@ -2,15 +2,17 @@ import React, { useEffect, useRef, useState } from "react";
 import { Rnd } from "react-rnd";
 import html2canvas from "html2canvas";
 import {
+  AlignCenter,
+  AlignLeft,
+  AlignRight,
   Download,
   ImageIcon,
-  Palette,
-  Move,
-  AlignLeft,
-  AlignCenter,
-  AlignRight,
-  Sun,
   Moon,
+  Move,
+  Palette,
+  RefreshCw,
+  Sun,
+  Type,
 } from "lucide-react";
 import { ThumbnailData, UploadedPhoto } from "../types";
 
@@ -18,12 +20,13 @@ interface ThumbnailPreviewProps {
   thumbnailData: ThumbnailData;
   setThumbnailData: React.Dispatch<React.SetStateAction<ThumbnailData>>;
   selectedPhoto: UploadedPhoto | null;
+  onRecommendCopy?: () => Promise<void>;
 }
 
 type TextAlign = "left" | "center" | "right";
-type BoxStyle = "transparent" | "glass" | "solid_box";
+type BoxStyle = "transparent" | "shadow" | "glass" | "solid";
+type FontFamily = "sans" | "serif" | "rounded";
 
-// Position/size stored as percentages of the container so the layout stays correct on resize.
 interface TextBox {
   xPct: number;
   yPct: number;
@@ -33,12 +36,9 @@ interface TextBox {
   color: string;
 }
 
-const PRESETS: Record<
-  ThumbnailData["layout_position"],
-  { main: Omit<TextBox, "fontSize" | "color">; sub: Omit<TextBox, "fontSize" | "color"> }
-> = {
+const PRESETS: Record<ThumbnailData["layout_position"], { main: Omit<TextBox, "fontSize" | "color">; sub: Omit<TextBox, "fontSize" | "color"> }> = {
   CENTER: {
-    main: { xPct: 10, yPct: 40, widthPct: 80, heightPct: 16 },
+    main: { xPct: 10, yPct: 39, widthPct: 80, heightPct: 16 },
     sub: { xPct: 10, yPct: 58, widthPct: 80, heightPct: 10 },
   },
   TOP_BANNER: {
@@ -46,36 +46,70 @@ const PRESETS: Record<
     sub: { xPct: 6, yPct: 26, widthPct: 88, heightPct: 10 },
   },
   BOTTOM_LEFT: {
-    main: { xPct: 6, yPct: 64, widthPct: 75, heightPct: 16 },
+    main: { xPct: 6, yPct: 63, widthPct: 75, heightPct: 16 },
     sub: { xPct: 6, yPct: 82, widthPct: 75, heightPct: 10 },
   },
 };
 
-export const ThumbnailPreview: React.FC<ThumbnailPreviewProps> = ({
-  thumbnailData,
-  setThumbnailData,
-  selectedPhoto,
-}) => {
+const RECOMMENDED_COPY = [
+  ["직접 다녀온 기록", "사진으로 정리한 하루"],
+  ["오늘의 솔직 후기", "좋았던 점부터 아쉬운 점까지"],
+  ["한눈에 보는 리뷰", "방문 전 확인하면 좋은 내용"],
+  ["내 취향으로 정리한 글", "초안에 경험을 더해 완성"],
+];
+
+const EDITOR_STORAGE_KEY = "blogdraft_thumbnail_editor_state_v1";
+
+export const ThumbnailPreview: React.FC<ThumbnailPreviewProps> = ({ thumbnailData, setThumbnailData, selectedPhoto, onRecommendCopy }) => {
   const containerRef = useRef<HTMLDivElement>(null);
   const [containerSize, setContainerSize] = useState({ width: 500, height: 500 });
   const [isDownloading, setIsDownloading] = useState(false);
   const [aspectRatio, setAspectRatio] = useState<"1:1" | "4:3" | "16:9">("1:1");
-  const [boxStyle, setBoxStyle] = useState<BoxStyle>("transparent");
+  const [boxStyle, setBoxStyle] = useState<BoxStyle>("shadow");
   const [darkOverlayOn, setDarkOverlayOn] = useState(true);
   const [textAlign, setTextAlign] = useState<TextAlign>("center");
+  const [fontFamily, setFontFamily] = useState<FontFamily>("sans");
+  const [copyIndex, setCopyIndex] = useState(0);
+  const [isRecommending, setIsRecommending] = useState(false);
 
-  const [mainBox, setMainBox] = useState<TextBox>({
-    ...PRESETS.CENTER.main,
-    fontSize: 30,
-    color: "#ffffff",
-  });
-  const [subBox, setSubBox] = useState<TextBox>({
-    ...PRESETS.CENTER.sub,
-    fontSize: 15,
-    color: "#fde047",
-  });
+  const [mainBox, setMainBox] = useState<TextBox>({ ...PRESETS.CENTER.main, fontSize: 34, color: "#ffffff" });
+  const [subBox, setSubBox] = useState<TextBox>({ ...PRESETS.CENTER.sub, fontSize: 16, color: "#fde68a" });
 
-  // Track the live rendered size of the stage so drag/position math (stored as %) stays accurate.
+  useEffect(() => {
+    const preset = PRESETS[thumbnailData.layout_position];
+    if (!preset) return;
+    setMainBox((prev) => ({ ...prev, ...preset.main }));
+    setSubBox((prev) => ({ ...prev, ...preset.sub }));
+  }, [thumbnailData.layout_position]);
+
+  useEffect(() => {
+    try {
+      const stored = localStorage.getItem(EDITOR_STORAGE_KEY);
+      if (!stored) return;
+      const parsed = JSON.parse(stored);
+      if (parsed.aspectRatio) setAspectRatio(parsed.aspectRatio);
+      if (parsed.boxStyle) setBoxStyle(parsed.boxStyle);
+      if (typeof parsed.darkOverlayOn === "boolean") setDarkOverlayOn(parsed.darkOverlayOn);
+      if (parsed.textAlign) setTextAlign(parsed.textAlign);
+      if (parsed.fontFamily) setFontFamily(parsed.fontFamily);
+      if (parsed.mainBox) setMainBox(parsed.mainBox);
+      if (parsed.subBox) setSubBox(parsed.subBox);
+    } catch (error) {
+      console.error("Failed to load thumbnail editor state:", error);
+    }
+  }, []);
+
+  useEffect(() => {
+    try {
+      localStorage.setItem(
+        EDITOR_STORAGE_KEY,
+        JSON.stringify({ aspectRatio, boxStyle, darkOverlayOn, textAlign, fontFamily, mainBox, subBox })
+      );
+    } catch (error) {
+      console.error("Failed to save thumbnail editor state:", error);
+    }
+  }, [aspectRatio, boxStyle, darkOverlayOn, textAlign, fontFamily, mainBox, subBox]);
+
   useEffect(() => {
     const el = containerRef.current;
     if (!el) return;
@@ -88,7 +122,6 @@ export const ThumbnailPreview: React.FC<ThumbnailPreviewProps> = ({
     return () => ro.disconnect();
   }, []);
 
-  // Re-apply a preset layout (used on first mount and via the "위치 프리셋" buttons)
   const applyPreset = (position: ThumbnailData["layout_position"]) => {
     const preset = PRESETS[position];
     setMainBox((prev) => ({ ...prev, ...preset.main }));
@@ -96,25 +129,37 @@ export const ThumbnailPreview: React.FC<ThumbnailPreviewProps> = ({
     setThumbnailData((prev) => ({ ...prev, layout_position: position }));
   };
 
+  const recommendCopy = async () => {
+    if (onRecommendCopy) {
+      try {
+        setIsRecommending(true);
+        await onRecommendCopy();
+        return;
+      } catch (error: any) {
+        alert(error?.message || "썸네일 문구 재추천 중 오류가 발생했습니다.");
+      } finally {
+        setIsRecommending(false);
+      }
+    }
+
+    const nextIndex = (copyIndex + 1) % RECOMMENDED_COPY.length;
+    setCopyIndex(nextIndex);
+    const [main, sub] = RECOMMENDED_COPY[nextIndex];
+    setThumbnailData((prev) => ({ ...prev, thumbnail_main_text: main, thumbnail_sub_text: sub }));
+  };
+
   const handleDownloadThumbnail = async () => {
     if (!containerRef.current) return;
     try {
       setIsDownloading(true);
-      const canvas = await html2canvas(containerRef.current, {
-        useCORS: true,
-        allowTaint: true,
-        scale: 2,
-        backgroundColor: null,
-      });
-
-      const image = canvas.toDataURL("image/png");
+      const canvas = await html2canvas(containerRef.current, { useCORS: true, allowTaint: true, scale: 2, backgroundColor: null });
       const link = document.createElement("a");
-      link.href = image;
-      link.download = `blog_thumbnail_${Date.now()}.png`;
+      link.href = canvas.toDataURL("image/png");
+      link.download = `blogdraft_thumbnail_${Date.now()}.png`;
       link.click();
-    } catch (err) {
-      console.error("Failed to render thumbnail canvas:", err);
-      alert("썸네일 이미지 다운로드 중 오류가 발생했습니다.");
+    } catch (error) {
+      console.error("Failed to render thumbnail:", error);
+      alert("썸네일 이미지 저장 중 오류가 발생했습니다.");
     } finally {
       setIsDownloading(false);
     }
@@ -122,20 +167,14 @@ export const ThumbnailPreview: React.FC<ThumbnailPreviewProps> = ({
 
   const aspectClasses = {
     "1:1": "aspect-square max-w-[500px]",
-    "4:3": "aspect-4/3 max-w-[550px]",
-    "16:9": "aspect-16/9 max-w-[600px]",
+    "4:3": "aspect-[4/3] max-w-[560px]",
+    "16:9": "aspect-video max-w-[640px]",
   };
 
-  const boxStyleClass =
-    boxStyle === "glass"
-      ? "bg-slate-900/60 backdrop-blur-md border border-white/20 shadow-2xl"
-      : boxStyle === "solid_box"
-      ? "bg-slate-900/90 border border-slate-700 shadow-2xl"
-      : "bg-transparent";
-
+  const fontClass = fontFamily === "serif" ? "font-serif" : fontFamily === "rounded" ? "font-sans" : "font-sans";
   const alignClass = textAlign === "left" ? "text-left" : textAlign === "right" ? "text-right" : "text-center";
-  const alignItemsClass =
-    textAlign === "left" ? "items-start" : textAlign === "right" ? "items-end" : "items-center";
+  const alignItemsClass = textAlign === "left" ? "items-start" : textAlign === "right" ? "items-end" : "items-center";
+  const boxClass = boxStyle === "glass" ? "bg-slate-950/55 backdrop-blur-md border border-white/20" : boxStyle === "solid" ? "bg-slate-950/90" : boxStyle === "shadow" ? "text-shadow-strong" : "bg-transparent";
 
   const pxBox = (box: TextBox) => ({
     x: (box.xPct / 100) * containerSize.width,
@@ -144,17 +183,9 @@ export const ThumbnailPreview: React.FC<ThumbnailPreviewProps> = ({
     height: (box.heightPct / 100) * containerSize.height,
   });
 
-  const updateBoxPositionPct = (
-    setBox: React.Dispatch<React.SetStateAction<TextBox>>,
-    x: number,
-    y: number
-  ) => {
-    if (containerSize.width === 0 || containerSize.height === 0) return;
-    setBox((prev) => ({
-      ...prev,
-      xPct: (x / containerSize.width) * 100,
-      yPct: (y / containerSize.height) * 100,
-    }));
+  const updateBoxPositionPct = (setBox: React.Dispatch<React.SetStateAction<TextBox>>, x: number, y: number) => {
+    if (!containerSize.width || !containerSize.height) return;
+    setBox((prev) => ({ ...prev, xPct: (x / containerSize.width) * 100, yPct: (y / containerSize.height) * 100 }));
   };
 
   const mainPx = pxBox(mainBox);
@@ -162,327 +193,175 @@ export const ThumbnailPreview: React.FC<ThumbnailPreviewProps> = ({
 
   return (
     <div className="space-y-6">
-      {/* Controls & Customizer Panel */}
-      <div className="bg-white border border-gray-200 rounded-xl p-4 sm:p-5 shadow-xs space-y-4">
-        <div className="flex items-center justify-between border-b border-gray-100 pb-3">
-          <h3 className="text-xs font-semibold text-slate-500 uppercase tracking-wider flex items-center gap-1.5">
-            <Palette className="w-4 h-4 text-blue-600" />
-            <span>썸네일 카피 & 디자인 커스텀</span>
+      <section className="space-y-4 rounded-lg border border-slate-200 bg-white p-4">
+        <div className="flex flex-wrap items-center justify-between gap-2 border-b border-slate-100 pb-3">
+          <h3 className="flex items-center gap-2 text-sm font-black text-slate-950">
+            <Palette className="h-4 w-4 text-blue-700" />
+            썸네일 문구와 디자인 편집
           </h3>
-          <span className="text-[11px] text-slate-400 flex items-center gap-1">
-            <Move className="w-3 h-3" />
-            텍스트를 드래그해서 위치 조정
+          <span className="flex items-center gap-1 text-xs text-slate-500">
+            <Move className="h-3.5 w-3.5" />
+            텍스트를 드래그해 위치를 조정하세요.
           </span>
         </div>
 
-        {/* Copy text inputs */}
-        <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
-          <div className="space-y-1">
-            <label className="text-xs font-bold text-slate-700 block">
-              메인 카피 (15자 이내)
-            </label>
-            <input
-              type="text"
-              value={thumbnailData.thumbnail_main_text}
-              onChange={(e) =>
-                setThumbnailData((prev) => ({
-                  ...prev,
-                  thumbnail_main_text: e.target.value,
-                }))
-              }
-              className="w-full px-3 py-2 text-xs border border-gray-200 rounded-lg focus:outline-none focus:ring-2 focus:ring-blue-500 font-bold text-slate-900 bg-gray-50/50"
-            />
-          </div>
+        <div className="grid gap-3 sm:grid-cols-2">
+          <label className="space-y-1 text-xs font-bold text-slate-700">
+            메인 문구
+            <input value={thumbnailData.thumbnail_main_text} onChange={(event) => setThumbnailData((prev) => ({ ...prev, thumbnail_main_text: event.target.value }))} className="w-full rounded-lg border border-slate-200 bg-slate-50 px-3 py-2 text-sm font-black outline-none focus:border-blue-400 focus:ring-2 focus:ring-blue-100" />
+          </label>
+          <label className="space-y-1 text-xs font-bold text-slate-700">
+            서브 문구
+            <input value={thumbnailData.thumbnail_sub_text} onChange={(event) => setThumbnailData((prev) => ({ ...prev, thumbnail_sub_text: event.target.value }))} className="w-full rounded-lg border border-slate-200 bg-slate-50 px-3 py-2 text-sm outline-none focus:border-blue-400 focus:ring-2 focus:ring-blue-100" />
+          </label>
+        </div>
 
+        <div className="grid gap-3 sm:grid-cols-2">
+          <ControlRange label="메인 글자 크기" value={mainBox.fontSize} min={16} max={58} onChange={(value) => setMainBox((prev) => ({ ...prev, fontSize: value }))} />
+          <ControlRange label="서브 글자 크기" value={subBox.fontSize} min={10} max={34} onChange={(value) => setSubBox((prev) => ({ ...prev, fontSize: value }))} />
+        </div>
+
+        <div className="grid gap-3 sm:grid-cols-3">
+          <ColorControl label="메인 색상" value={mainBox.color} onChange={(value) => setMainBox((prev) => ({ ...prev, color: value }))} />
+          <ColorControl label="서브 색상" value={subBox.color} onChange={(value) => setSubBox((prev) => ({ ...prev, color: value }))} />
           <div className="space-y-1">
-            <label className="text-xs font-bold text-slate-700 block">
-              서브 카피 (20자 이내)
-            </label>
-            <input
-              type="text"
-              value={thumbnailData.thumbnail_sub_text}
-              onChange={(e) =>
-                setThumbnailData((prev) => ({
-                  ...prev,
-                  thumbnail_sub_text: e.target.value,
-                }))
-              }
-              className="w-full px-3 py-2 text-xs border border-gray-200 rounded-lg focus:outline-none focus:ring-2 focus:ring-blue-500 text-slate-800 bg-gray-50/50"
-            />
+            <label className="block text-xs font-bold text-slate-700">글꼴</label>
+            <select value={fontFamily} onChange={(event) => setFontFamily(event.target.value as FontFamily)} className="h-10 w-full rounded-lg border border-slate-200 bg-slate-50 px-3 text-xs font-bold outline-none focus:border-blue-400">
+              <option value="sans">깔끔한 고딕</option>
+              <option value="rounded">부드러운 고딕</option>
+              <option value="serif">차분한 명조</option>
+            </select>
           </div>
         </div>
 
-        {/* Font size sliders */}
-        <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
-          <div className="space-y-1">
-            <div className="flex justify-between items-center">
-              <label className="text-[11px] font-bold text-slate-600">메인 폰트 크기</label>
-              <span className="text-[11px] text-blue-600 font-semibold">{mainBox.fontSize}px</span>
-            </div>
-            <input
-              type="range"
-              min={14}
-              max={56}
-              step={1}
-              value={mainBox.fontSize}
-              onChange={(e) => setMainBox((prev) => ({ ...prev, fontSize: parseInt(e.target.value, 10) }))}
-              className="w-full h-1.5 bg-gray-200 rounded-lg appearance-none cursor-pointer accent-blue-600"
-            />
-          </div>
-          <div className="space-y-1">
-            <div className="flex justify-between items-center">
-              <label className="text-[11px] font-bold text-slate-600">서브 폰트 크기</label>
-              <span className="text-[11px] text-blue-600 font-semibold">{subBox.fontSize}px</span>
-            </div>
-            <input
-              type="range"
-              min={10}
-              max={32}
-              step={1}
-              value={subBox.fontSize}
-              onChange={(e) => setSubBox((prev) => ({ ...prev, fontSize: parseInt(e.target.value, 10) }))}
-              className="w-full h-1.5 bg-gray-200 rounded-lg appearance-none cursor-pointer accent-blue-600"
-            />
-          </div>
+        <div className="grid gap-3 sm:grid-cols-2 lg:grid-cols-4">
+          <ToggleButton active={darkOverlayOn} onClick={() => setDarkOverlayOn((prev) => !prev)} activeLabel="배경 어둡게 ON" inactiveLabel="배경 어둡게 OFF" activeIcon={<Moon className="h-3.5 w-3.5" />} inactiveIcon={<Sun className="h-3.5 w-3.5" />} />
+          <Segmented label="정렬" value={textAlign} options={[
+            { id: "left", label: "왼쪽", icon: AlignLeft },
+            { id: "center", label: "가운데", icon: AlignCenter },
+            { id: "right", label: "오른쪽", icon: AlignRight },
+          ]} onChange={(value) => setTextAlign(value as TextAlign)} />
+          <Segmented label="비율" value={aspectRatio} options={[
+            { id: "1:1", label: "1:1" },
+            { id: "4:3", label: "4:3" },
+            { id: "16:9", label: "16:9" },
+          ]} onChange={(value) => setAspectRatio(value as "1:1" | "4:3" | "16:9")} />
+          <Segmented label="텍스트 배경" value={boxStyle} options={[
+            { id: "shadow", label: "그림자" },
+            { id: "glass", label: "반투명" },
+            { id: "solid", label: "박스" },
+          ]} onChange={(value) => setBoxStyle(value as BoxStyle)} />
         </div>
 
-        {/* Color pickers */}
-        <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
-          <div className="space-y-1">
-            <label className="text-[11px] font-bold text-slate-600 block">메인 텍스트 색상</label>
-            <div className="flex items-center gap-2">
-              <input
-                type="color"
-                value={mainBox.color}
-                onChange={(e) => setMainBox((prev) => ({ ...prev, color: e.target.value }))}
-                className="w-9 h-9 rounded-lg border border-gray-200 cursor-pointer bg-transparent"
-              />
-              <span className="text-[11px] font-mono text-slate-500">{mainBox.color}</span>
-            </div>
-          </div>
-          <div className="space-y-1">
-            <label className="text-[11px] font-bold text-slate-600 block">서브 텍스트 색상</label>
-            <div className="flex items-center gap-2">
-              <input
-                type="color"
-                value={subBox.color}
-                onChange={(e) => setSubBox((prev) => ({ ...prev, color: e.target.value }))}
-                className="w-9 h-9 rounded-lg border border-gray-200 cursor-pointer bg-transparent"
-              />
-              <span className="text-[11px] font-mono text-slate-500">{subBox.color}</span>
-            </div>
-          </div>
+        <div className="grid gap-3 sm:grid-cols-2">
+          <Segmented label="배치" value={thumbnailData.layout_position} options={[
+            { id: "CENTER", label: "중앙" },
+            { id: "BOTTOM_LEFT", label: "좌하단" },
+            { id: "TOP_BANNER", label: "상단" },
+          ]} onChange={(value) => applyPreset(value as ThumbnailData["layout_position"])} />
+          <button type="button" onClick={recommendCopy} disabled={isRecommending} className="flex h-[62px] items-center justify-center gap-2 rounded-lg border border-blue-200 bg-blue-50 text-xs font-black text-blue-800 hover:bg-blue-100 disabled:cursor-not-allowed disabled:opacity-60">
+            <RefreshCw className={`h-4 w-4 ${isRecommending ? "animate-spin" : ""}`} />
+            {isRecommending ? "문구 추천 중" : "문구 다시 추천받기"}
+          </button>
         </div>
+      </section>
 
-        <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
-          {/* Dark overlay toggle */}
-          <div className="space-y-1">
-            <label className="text-[11px] font-bold text-slate-600 block">배경 어둡게(오버레이)</label>
-            <button
-              type="button"
-              onClick={() => setDarkOverlayOn((prev) => !prev)}
-              className={`w-full flex items-center justify-center gap-2 py-1.5 rounded-lg border text-[11px] font-bold transition cursor-pointer ${
-                darkOverlayOn
-                  ? "bg-slate-900 border-slate-900 text-white"
-                  : "bg-gray-50 border-gray-200 text-slate-600"
-              }`}
-            >
-              {darkOverlayOn ? <Moon className="w-3.5 h-3.5" /> : <Sun className="w-3.5 h-3.5" />}
-              <span>{darkOverlayOn ? "오버레이 ON" : "오버레이 OFF"}</span>
-            </button>
-          </div>
-
-          {/* Text alignment */}
-          <div className="space-y-1">
-            <label className="text-[11px] font-bold text-slate-600 block">텍스트 정렬</label>
-            <div className="flex rounded-lg border border-gray-200 p-0.5 bg-gray-50">
-              {(
-                [
-                  { id: "left" as const, icon: AlignLeft },
-                  { id: "center" as const, icon: AlignCenter },
-                  { id: "right" as const, icon: AlignRight },
-                ]
-              ).map(({ id, icon: Icon }) => (
-                <button
-                  key={id}
-                  type="button"
-                  onClick={() => setTextAlign(id)}
-                  className={`flex-1 py-1 flex items-center justify-center rounded-md transition cursor-pointer ${
-                    textAlign === id ? "bg-white text-blue-600 shadow-2xs" : "text-slate-500 hover:text-slate-800"
-                  }`}
-                >
-                  <Icon className="w-3.5 h-3.5" />
-                </button>
-              ))}
-            </div>
-          </div>
-        </div>
-
-        <div className="grid grid-cols-1 sm:grid-cols-3 gap-3 pt-1">
-          {/* Layout Position Preset */}
-          <div className="space-y-1">
-            <label className="text-[11px] font-bold text-slate-600 block">
-              위치 프리셋 (드래그로 자유 조정 가능)
-            </label>
-            <div className="flex rounded-lg border border-gray-200 p-0.5 bg-gray-50">
-              {(
-                [
-                  { id: "CENTER" as const, label: "중앙" },
-                  { id: "BOTTOM_LEFT" as const, label: "좌측 하단" },
-                  { id: "TOP_BANNER" as const, label: "상단 배너" },
-                ]
-              ).map((pos) => (
-                <button
-                  key={pos.id}
-                  type="button"
-                  onClick={() => applyPreset(pos.id)}
-                  className={`flex-1 py-1 text-[11px] font-medium rounded-md transition cursor-pointer ${
-                    thumbnailData.layout_position === pos.id
-                      ? "bg-white text-blue-600 font-bold shadow-2xs"
-                      : "text-slate-600 hover:text-slate-900"
-                  }`}
-                >
-                  {pos.label}
-                </button>
-              ))}
-            </div>
-          </div>
-
-          {/* Aspect Ratio */}
-          <div className="space-y-1">
-            <label className="text-[11px] font-bold text-slate-600 block">
-              비율 (Aspect Ratio)
-            </label>
-            <div className="flex rounded-lg border border-gray-200 p-0.5 bg-gray-50">
-              {(["1:1", "4:3", "16:9"] as const).map((ratio) => (
-                <button
-                  key={ratio}
-                  type="button"
-                  onClick={() => setAspectRatio(ratio)}
-                  className={`flex-1 py-1 text-[11px] font-medium rounded-md transition cursor-pointer ${
-                    aspectRatio === ratio
-                      ? "bg-white text-blue-600 font-bold shadow-2xs"
-                      : "text-slate-600 hover:text-slate-900"
-                  }`}
-                >
-                  {ratio}
-                </button>
-              ))}
-            </div>
-          </div>
-
-          {/* Text box background style */}
-          <div className="space-y-1">
-            <label className="text-[11px] font-bold text-slate-600 block">
-              텍스트 박스 스타일
-            </label>
-            <div className="flex rounded-lg border border-gray-200 p-0.5 bg-gray-50">
-              {(
-                [
-                  { id: "transparent" as const, label: "투명" },
-                  { id: "glass" as const, label: "글래스" },
-                  { id: "solid_box" as const, label: "박스" },
-                ]
-              ).map((style) => (
-                <button
-                  key={style.id}
-                  type="button"
-                  onClick={() => setBoxStyle(style.id)}
-                  className={`flex-1 py-1 text-[11px] font-medium rounded-md transition cursor-pointer ${
-                    boxStyle === style.id
-                      ? "bg-white text-blue-600 font-bold shadow-2xs"
-                      : "text-slate-600 hover:text-slate-900"
-                  }`}
-                >
-                  {style.label}
-                </button>
-              ))}
-            </div>
-          </div>
-        </div>
-      </div>
-
-      {/* Main Thumbnail Render Stage */}
-      <div className="flex flex-col items-center justify-center space-y-4">
-        <div
-          ref={containerRef}
-          className={`w-full ${aspectClasses[aspectRatio]} relative overflow-hidden rounded-xl shadow-xl bg-slate-900 select-none transition-all duration-300`}
-        >
+      <section className="flex flex-col items-center gap-4">
+        <div ref={containerRef} className={`relative w-full overflow-hidden rounded-lg bg-slate-950 shadow-xl ${aspectClasses[aspectRatio]}`}>
           {selectedPhoto ? (
-            <img
-              src={selectedPhoto.previewUrl}
-              alt="썸네일 배경 이미지"
-              className="w-full h-full object-cover pointer-events-none"
-            />
+            <img src={selectedPhoto.previewUrl} alt="썸네일 배경 이미지" className="h-full w-full object-cover" />
           ) : (
-            <div className="w-full h-full bg-gradient-to-br from-slate-900 via-blue-950 to-slate-900 flex flex-col items-center justify-center p-6 text-slate-400 pointer-events-none">
-              <ImageIcon className="w-12 h-12 mb-2 text-blue-400 opacity-60" />
-              <p className="text-xs text-blue-200">
-                업로드된 대표 사진이 없습니다.
-              </p>
+            <div className="flex h-full w-full flex-col items-center justify-center bg-slate-900 p-6 text-blue-100">
+              <ImageIcon className="mb-2 h-12 w-12 text-blue-300" />
+              <p className="text-sm font-bold">대표 사진을 선택하면 썸네일 배경으로 표시됩니다.</p>
             </div>
           )}
 
-          {darkOverlayOn && (
-            <div className="absolute inset-0 bg-gradient-to-t from-black/85 via-black/40 to-black/20 pointer-events-none" />
-          )}
+          {darkOverlayOn && <div className="absolute inset-0 bg-gradient-to-t from-black/85 via-black/35 to-black/10" />}
 
-          <Rnd
-            size={{ width: mainPx.width, height: mainPx.height }}
-            position={{ x: mainPx.x, y: mainPx.y }}
-            onDragStop={(_e, d) => updateBoxPositionPct(setMainBox, d.x, d.y)}
-            enableResizing={false}
-            bounds="parent"
-            className="flex"
-          >
-            <div className={`w-full h-full flex ${alignItemsClass} justify-center px-4 py-2 rounded-xl ${boxStyleClass}`}>
-              <h2
-                style={{ fontSize: mainBox.fontSize, color: mainBox.color }}
-                className={`w-full font-black tracking-tight leading-tight drop-shadow-md break-keep ${alignClass}`}
-              >
-                {thumbnailData.thumbnail_main_text || "메인 썸네일 타이틀"}
+          <Rnd size={{ width: mainPx.width, height: mainPx.height }} position={{ x: mainPx.x, y: mainPx.y }} onDragStop={(_event, data) => updateBoxPositionPct(setMainBox, data.x, data.y)} enableResizing={false} bounds="parent" className="flex">
+            <div className={`flex h-full w-full justify-center rounded-lg px-4 py-2 ${alignItemsClass} ${boxClass}`}>
+              <h2 style={{ fontSize: mainBox.fontSize, color: mainBox.color }} className={`w-full break-keep font-black leading-tight ${fontClass} ${alignClass}`}>
+                {thumbnailData.thumbnail_main_text || "메인 문구"}
               </h2>
             </div>
           </Rnd>
 
-          <Rnd
-            size={{ width: subPx.width, height: subPx.height }}
-            position={{ x: subPx.x, y: subPx.y }}
-            onDragStop={(_e, d) => updateBoxPositionPct(setSubBox, d.x, d.y)}
-            enableResizing={false}
-            bounds="parent"
-            className="flex"
-          >
-            <div className={`w-full h-full flex ${alignItemsClass} justify-center px-4 py-1 rounded-xl ${boxStyleClass}`}>
-              <p
-                style={{ fontSize: subBox.fontSize, color: subBox.color }}
-                className={`w-full font-semibold tracking-wide break-keep drop-shadow-xs ${alignClass}`}
-              >
-                {thumbnailData.thumbnail_sub_text || "서브 부연 설명 문구"}
+          <Rnd size={{ width: subPx.width, height: subPx.height }} position={{ x: subPx.x, y: subPx.y }} onDragStop={(_event, data) => updateBoxPositionPct(setSubBox, data.x, data.y)} enableResizing={false} bounds="parent" className="flex">
+            <div className={`flex h-full w-full justify-center rounded-lg px-4 py-1 ${alignItemsClass} ${boxClass}`}>
+              <p style={{ fontSize: subBox.fontSize, color: subBox.color }} className={`w-full break-keep font-bold leading-snug ${fontClass} ${alignClass}`}>
+                {thumbnailData.thumbnail_sub_text || "서브 문구"}
               </p>
             </div>
           </Rnd>
         </div>
 
-        <button
-          type="button"
-          onClick={handleDownloadThumbnail}
-          disabled={isDownloading}
-          className="w-full max-w-[500px] py-3.5 px-6 bg-blue-600 hover:bg-blue-700 text-white font-bold text-sm rounded-xl shadow-md hover:shadow-lg transition flex items-center justify-center gap-2 cursor-pointer disabled:opacity-50"
-        >
+        <button type="button" onClick={handleDownloadThumbnail} disabled={isDownloading} className="flex w-full max-w-[500px] items-center justify-center gap-2 rounded-lg bg-blue-700 px-6 py-3.5 text-sm font-black text-white transition hover:bg-blue-800 disabled:opacity-50">
           {isDownloading ? (
             <>
-              <div className="w-4 h-4 border-2 border-white border-t-transparent rounded-full animate-spin" />
-              <span>썸네일 이미지 변환 중...</span>
+              <div className="h-4 w-4 animate-spin rounded-full border-2 border-white border-t-transparent" />
+              이미지 저장 준비 중
             </>
           ) : (
             <>
-              <Download className="w-4.5 h-4.5" />
-              <span>🖼️ 썸네일 이미지 다운로드 (PNG)</span>
+              <Download className="h-4 w-4" />
+              결과 이미지 저장
             </>
           )}
         </button>
-      </div>
+      </section>
     </div>
   );
 };
+
+function ControlRange({ label, value, min, max, onChange }: { label: string; value: number; min: number; max: number; onChange: (value: number) => void }) {
+  return (
+    <label className="space-y-1 text-xs font-bold text-slate-700">
+      <span className="flex items-center justify-between">
+        {label}
+        <span className="text-blue-700">{value}px</span>
+      </span>
+      <input type="range" min={min} max={max} value={value} onChange={(event) => onChange(parseInt(event.target.value, 10))} className="w-full accent-blue-700" />
+    </label>
+  );
+}
+
+function ColorControl({ label, value, onChange }: { label: string; value: string; onChange: (value: string) => void }) {
+  return (
+    <label className="space-y-1 text-xs font-bold text-slate-700">
+      {label}
+      <span className="flex items-center gap-2">
+        <input type="color" value={value} onChange={(event) => onChange(event.target.value)} className="h-10 w-10 cursor-pointer rounded-lg border border-slate-200 bg-transparent" />
+        <span className="font-mono text-slate-500">{value}</span>
+      </span>
+    </label>
+  );
+}
+
+function ToggleButton({ active, onClick, activeLabel, inactiveLabel, activeIcon, inactiveIcon }: { active: boolean; onClick: () => void; activeLabel: string; inactiveLabel: string; activeIcon: React.ReactNode; inactiveIcon: React.ReactNode }) {
+  return (
+    <button type="button" onClick={onClick} className={`flex h-[62px] items-center justify-center gap-2 rounded-lg border px-2 text-xs font-black transition ${active ? "border-slate-900 bg-slate-900 text-white" : "border-slate-200 bg-slate-50 text-slate-600 hover:bg-slate-100"}`}>
+      {active ? activeIcon : inactiveIcon}
+      {active ? activeLabel : inactiveLabel}
+    </button>
+  );
+}
+
+function Segmented({ label, value, options, onChange }: { label: string; value: string; options: Array<{ id: string; label: string; icon?: React.ComponentType<{ className?: string }> }>; onChange: (value: string) => void }) {
+  return (
+    <div className="space-y-1">
+      <label className="flex items-center gap-1 text-xs font-bold text-slate-700">
+        <Type className="h-3.5 w-3.5 text-blue-700" />
+        {label}
+      </label>
+      <div className="flex rounded-lg border border-slate-200 bg-slate-50 p-1">
+        {options.map(({ id, label: optionLabel, icon: Icon }) => (
+          <button key={id} type="button" onClick={() => onChange(id)} className={`flex min-h-8 flex-1 items-center justify-center gap-1 rounded-md px-1 text-[11px] font-bold transition ${value === id ? "bg-white text-blue-700 shadow-sm" : "text-slate-600 hover:text-slate-900"}`}>
+            {Icon && <Icon className="h-3.5 w-3.5" />}
+            {optionLabel}
+          </button>
+        ))}
+      </div>
+    </div>
+  );
+}

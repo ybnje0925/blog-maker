@@ -1,478 +1,373 @@
-import React, { useRef } from "react";
+import React, { useRef, useState } from "react";
 import {
-  Upload,
-  ImageIcon,
-  FileText,
-  X,
   CheckCircle2,
+  ExternalLink,
+  FileText,
+  FileUp,
+  HelpCircle,
+  ImageIcon,
+  Key,
+  MessageSquare,
+  Palette,
+  ShieldCheck,
   Sliders,
   Sparkles,
-  MessageSquare,
-  HelpCircle,
-  FileUp,
-  Key,
-  ExternalLink,
-  ShieldAlert,
+  Upload,
+  X,
 } from "lucide-react";
 import { FormState, UploadedPhoto } from "../types";
 import { HeaderAdSlot } from "./ads/HeaderAdSlot";
+import { AdSlot } from "./ads/AdSlot";
 
 interface InputFormProps {
   formState: FormState;
   setFormState: React.Dispatch<React.SetStateAction<FormState>>;
   onSubmit: () => void;
   isGenerating: boolean;
+  pdfBriefing?: string;
 }
 
-const TONE_PRESETS = [
-  "친근한 해요체",
-  "정중한 습니다체",
-  "솔직 유쾌한 반말체",
-  "전문적인 분석조",
-];
+const TONE_PRESETS = ["친근한 존댓말", "담백한 정보형", "자연스러운 후기형", "전문적인 리뷰형", "가벼운 일상형"];
+const THUMBNAIL_STYLES = ["깔끔한 정보형", "자연스러운 일상형", "감성 후기형", "강한 주목형", "전문적인 리뷰형", "심플형"];
 
-const STYLE_LEVEL_DESCRIPTIONS: { [key: number]: string } = {
-  1: "1단계: 건조한 사실 및 정보 전달 중심",
-  2: "2단계: 깔끔하고 명확한 기본 가독성",
-  3: "3단계: 생생한 체험과 친근한 블로그 어조 (권장)",
-  4: "4단계: 감성과 현장감이 살아있는 풍부한 서사",
-  5: "5단계: 감성/스토리텔링 극대화 (상세 경험 묘사)",
+const STYLE_LEVEL_DESCRIPTIONS: Record<number, string> = {
+  1: "사실 정보 중심으로 짧고 담백하게 정리합니다.",
+  2: "과장 없이 명확한 기본 블로그 문장으로 정리합니다.",
+  3: "경험을 덧붙이기 좋은 자연스러운 후기형 초안입니다.",
+  4: "감정과 분위기를 조금 더 살려 읽는 흐름을 만듭니다.",
+  5: "스토리 흐름을 강하게 잡되 사용자가 사실과 경험을 꼭 보완해야 합니다.",
 };
 
-export const InputForm: React.FC<InputFormProps> = ({
-  formState,
-  setFormState,
-  onSubmit,
-  isGenerating,
-}) => {
+export const InputForm: React.FC<InputFormProps> = ({ formState, setFormState, onSubmit, isGenerating, pdfBriefing }) => {
   const photoInputRef = useRef<HTMLInputElement>(null);
   const pdfInputRef = useRef<HTMLInputElement>(null);
+  const referenceThumbnailInputRef = useRef<HTMLInputElement>(null);
+  const [activePanel, setActivePanel] = useState<"photos" | "pdf" | "style" | "thumbnail" | "request">("photos");
 
-  // Handle Photo Upload
   const handlePhotoFiles = (files: FileList | null) => {
     if (!files || files.length === 0) return;
     const newPhotos: UploadedPhoto[] = Array.from(files)
       .filter((file) => file.type.startsWith("image/"))
       .map((file, idx) => ({
-        id: `${Date.now()}-${Math.random().toString(36).substring(2, 9)}-${idx}`,
+        id: `${Date.now()}-${Math.random().toString(36).slice(2)}-${idx}`,
         file,
         previewUrl: URL.createObjectURL(file),
       }));
 
     setFormState((prev) => {
       const updated = [...prev.photos, ...newPhotos];
-      return {
-        ...prev,
-        photos: updated,
-        thumbnailIndex:
-          prev.thumbnailIndex >= updated.length ? 0 : prev.thumbnailIndex,
-      };
+      return { ...prev, photos: updated, thumbnailIndex: Math.min(prev.thumbnailIndex, Math.max(0, updated.length - 1)) };
     });
   };
 
-  // Remove single photo
   const handleRemovePhoto = (id: string, indexToRemove: number) => {
     setFormState((prev) => {
-      const updated = prev.photos.filter((p) => p.id !== id);
-      let newThumbIdx = prev.thumbnailIndex;
-      if (indexToRemove === prev.thumbnailIndex) {
-        newThumbIdx = 0;
-      } else if (indexToRemove < prev.thumbnailIndex) {
-        newThumbIdx = prev.thumbnailIndex - 1;
-      }
-      return {
-        ...prev,
-        photos: updated,
-        thumbnailIndex: Math.max(0, Math.min(newThumbIdx, updated.length - 1)),
-      };
+      const updated = prev.photos.filter((photo) => photo.id !== id);
+      const nextIndex = indexToRemove <= prev.thumbnailIndex ? Math.max(0, prev.thumbnailIndex - 1) : prev.thumbnailIndex;
+      return { ...prev, photos: updated, thumbnailIndex: Math.min(nextIndex, Math.max(0, updated.length - 1)) };
     });
   };
 
-  // Handle PDF Upload
   const handlePdfFiles = (files: FileList | null) => {
     if (!files || files.length === 0) return;
     const file = files[0];
-    if (file.type === "application/pdf" || file.name.endsWith(".pdf")) {
-      setFormState((prev) => ({
-        ...prev,
-        pdfFile: file,
-        pdfFileName: file.name,
-      }));
-    } else {
-      alert("PDF 형식(.pdf)의 문서만 업로드할 수 있습니다.");
+    if (file.type === "application/pdf" || file.name.toLowerCase().endsWith(".pdf")) {
+      setFormState((prev) => ({ ...prev, pdfFile: file, pdfFileName: file.name }));
+      return;
     }
+    alert("PDF 형식(.pdf)의 참고자료만 업로드할 수 있습니다.");
   };
 
-  const handleRemovePdf = () => {
-    setFormState((prev) => ({
-      ...prev,
-      pdfFile: null,
-      pdfFileName: null,
-    }));
+  const removePdf = () => {
+    setFormState((prev) => ({ ...prev, pdfFile: null, pdfFileName: null }));
     if (pdfInputRef.current) pdfInputRef.current.value = "";
   };
 
-  const isButtonDisabled = isGenerating;
+  const handleReferenceThumbnailFiles = (files: FileList | null) => {
+    if (!files || files.length === 0) return;
+    const file = files[0];
+    if (!file.type.startsWith("image/")) {
+      alert("참고 썸네일은 이미지 파일만 업로드할 수 있습니다.");
+      return;
+    }
+    setFormState((prev) => {
+      if (prev.referenceThumbnailPreviewUrl) URL.revokeObjectURL(prev.referenceThumbnailPreviewUrl);
+      return {
+        ...prev,
+        referenceThumbnailFile: file,
+        referenceThumbnailFileName: file.name,
+        referenceThumbnailPreviewUrl: URL.createObjectURL(file),
+      };
+    });
+  };
+
+  const removeReferenceThumbnail = () => {
+    setFormState((prev) => {
+      if (prev.referenceThumbnailPreviewUrl) URL.revokeObjectURL(prev.referenceThumbnailPreviewUrl);
+      return {
+        ...prev,
+        referenceThumbnailFile: null,
+        referenceThumbnailFileName: null,
+        referenceThumbnailPreviewUrl: null,
+      };
+    });
+    if (referenceThumbnailInputRef.current) referenceThumbnailInputRef.current.value = "";
+  };
 
   return (
-    <div className="flex flex-col gap-5 overflow-hidden">
+    <div className="flex flex-col gap-5">
       <HeaderAdSlot />
 
-      {/* 1. API Key & Security Settings Card */}
-      <div className="bg-white rounded-xl border border-gray-200 p-4 shadow-sm">
-        <div className="flex justify-between items-center mb-3">
-          <h2 className="text-xs font-semibold uppercase tracking-wider text-slate-500 flex items-center gap-1.5">
-            <Key className="w-4 h-4 text-blue-600" />
-            <span>API 인증 & 개인정보 설정</span>
+      <section className="rounded-lg border border-slate-200 bg-white p-4 shadow-sm">
+        <div className="mb-3 flex items-center justify-between">
+          <h2 className="flex items-center gap-2 text-xs font-bold uppercase tracking-wider text-slate-500">
+            <Key className="h-4 w-4 text-blue-700" />
+            API와 입력 자료 안내
           </h2>
-          <a
-            href="https://aistudio.google.com/app/apikey"
-            target="_blank"
-            rel="noopener noreferrer"
-            className="text-[11px] font-semibold text-blue-600 hover:text-blue-800 flex items-center gap-1 hover:underline"
-          >
-            <span>🔑 1분 만에 무료 API Key 발급받기</span>
-            <ExternalLink className="w-3 h-3" />
+          <a href="https://aistudio.google.com/app/apikey" target="_blank" rel="noreferrer" className="inline-flex items-center gap-1 text-xs font-bold text-blue-700 hover:underline">
+            Gemini API Key 발급
+            <ExternalLink className="h-3 w-3" />
           </a>
         </div>
+        <input
+          type="password"
+          value={formState.userApiKey}
+          onChange={(event) => setFormState((prev) => ({ ...prev, userApiKey: event.target.value }))}
+          placeholder="개인 Gemini API Key 선택 입력"
+          className="w-full rounded-lg border border-slate-200 bg-slate-50 px-3 py-2 text-xs font-mono outline-none transition focus:border-blue-400 focus:bg-white focus:ring-2 focus:ring-blue-100"
+        />
+        <label className="mt-3 flex cursor-pointer items-start gap-2 rounded-lg border border-blue-100 bg-blue-50 p-3 text-xs leading-5 text-slate-700">
+          <input
+            type="checkbox"
+            checked={formState.privacyConsent}
+            onChange={(event) => setFormState((prev) => ({ ...prev, privacyConsent: event.target.checked }))}
+            className="mt-0.5 h-4 w-4 rounded border-slate-300 text-blue-700"
+          />
+          <span>
+            <strong className="text-blue-800">AI 초안 생성 안내를 확인했습니다.</strong> 업로드한 사진, PDF, 요청사항은 초안 생성을 위해 처리되며 최종 발행 전 사실 확인과 편집은 사용자가 진행합니다.
+          </span>
+        </label>
+      </section>
 
-        <div className="space-y-3">
-          <div>
-            <label className="text-xs font-bold text-slate-700 block mb-1">
-              개인 Gemini API Key (선택)
-            </label>
-            <input
-              type="password"
-              value={formState.userApiKey}
-              onChange={(e) =>
-                setFormState((prev) => ({ ...prev, userApiKey: e.target.value }))
-              }
-              placeholder="AIzaSy... (미입력 시 공용 API Key 1일 3회 무료 적용)"
-              className="w-full px-3 py-2 bg-gray-50 border border-gray-200 rounded-lg text-xs font-mono focus:ring-2 focus:ring-blue-500 focus:bg-white outline-none transition"
-            />
-            <p className="text-[11px] text-slate-500 mt-1">
-              * 개인 Key 입력 시 호출 한도(Rate Limit) 없이 무제한으로 이용하실 수 있습니다.
-            </p>
-          </div>
-
-          {/* Legal / Privacy Consent Checkbox */}
-          <div className="p-3 bg-blue-50/50 border border-blue-200/80 rounded-lg">
-            <label className="flex items-start gap-2.5 cursor-pointer select-none">
-              <input
-                type="checkbox"
-                checked={formState.privacyConsent}
-                onChange={(e) =>
-                  setFormState((prev) => ({
-                    ...prev,
-                    privacyConsent: e.target.checked,
-                  }))
-                }
-                className="mt-0.5 w-4 h-4 text-blue-600 rounded border-gray-300 focus:ring-blue-500 cursor-pointer"
-              />
-              <span className="text-xs text-slate-700 leading-snug">
-                <strong className="text-blue-700 font-bold">[안내]</strong> Google Gemini 무료 API 이용 시, 입력 데이터(사진/PDF/텍스트)가 AI 모델 개선에 활용될 수 있음에 동의합니다. (공용 Key 사용 시 1일 3회 제한)
-              </span>
-            </label>
-          </div>
-        </div>
+      <div className="grid grid-cols-5 gap-2 rounded-lg border border-slate-200 bg-white p-2 shadow-sm">
+        {[
+          { id: "photos" as const, label: "사진", icon: ImageIcon },
+          { id: "pdf" as const, label: "PDF", icon: FileText },
+          { id: "style" as const, label: "말투", icon: MessageSquare },
+          { id: "thumbnail" as const, label: "썸네일", icon: Palette },
+          { id: "request" as const, label: "요청", icon: HelpCircle },
+        ].map(({ id, label, icon: Icon }) => (
+          <button
+            key={id}
+            type="button"
+            onClick={() => setActivePanel(id)}
+            className={`flex min-h-10 items-center justify-center gap-1 rounded-md text-xs font-bold transition ${activePanel === id ? "bg-blue-700 text-white" : "text-slate-600 hover:bg-slate-100"}`}
+          >
+            <Icon className="h-4 w-4" />
+            {label}
+          </button>
+        ))}
       </div>
 
-      {/* 2. Photo Upload & Thumbnail Selection Card */}
-      <div className="bg-white rounded-xl border border-gray-200 p-4 shadow-sm flex flex-col">
-        <div className="flex justify-between items-center mb-3">
-          <h2 className="text-xs font-semibold uppercase tracking-wider text-slate-500 flex items-center gap-2">
-            <ImageIcon className="w-4 h-4 text-blue-600" />
-            <span>1. 본문 사진 업로드</span>
-          </h2>
-          <span className="text-[11px] bg-blue-50 text-blue-600 font-semibold px-2 py-0.5 rounded">
-            {formState.photos.length}장 선택됨
-          </span>
-        </div>
-
-        {/* Drag & Drop Area */}
-        <div
-          onClick={() => photoInputRef.current?.click()}
-          onDragOver={(e) => e.preventDefault()}
-          onDrop={(e) => {
-            e.preventDefault();
-            handlePhotoFiles(e.dataTransfer.files);
-          }}
-          className="border-2 border-dashed border-gray-200 hover:border-blue-400 bg-gray-50/50 hover:bg-blue-50/20 rounded-lg p-3 text-center cursor-pointer transition group mb-3"
-        >
-          <input
-            ref={photoInputRef}
-            type="file"
-            accept="image/png, image/jpeg, image/webp"
-            multiple
-            className="hidden"
-            onChange={(e) => handlePhotoFiles(e.target.files)}
-          />
-          <div className="flex flex-col items-center justify-center space-y-1">
-            <div className="w-8 h-8 rounded-full bg-blue-50 group-hover:bg-blue-100 text-blue-600 flex items-center justify-center transition">
-              <Upload className="w-4 h-4" />
-            </div>
-            <p className="text-xs font-medium text-slate-700">
-              클릭하거나 멀티 드래그 앤 드롭으로 이미지 추가
-            </p>
-            <p className="text-[10px] text-gray-400">
-              PNG, JPG, WEBP (여러 장 지정 가능)
-            </p>
+      {activePanel === "photos" && (
+        <section className="rounded-lg border border-slate-200 bg-white p-4 shadow-sm">
+          <div className="mb-3 flex items-center justify-between">
+            <h2 className="flex items-center gap-2 text-sm font-black text-slate-950">
+              <ImageIcon className="h-4 w-4 text-blue-700" />
+              사진에서 글로, 글에서 썸네일까지
+            </h2>
+            <span className="rounded bg-blue-50 px-2 py-1 text-xs font-bold text-blue-700">{formState.photos.length}장 선택</span>
           </div>
-        </div>
 
-        {/* Photos Grid with Radio Button for Thumbnail Selection */}
-        {formState.photos.length > 0 && (
-          <div className="grid grid-cols-3 gap-2 mb-3 max-h-56 overflow-y-auto pr-1">
-            {formState.photos.map((photo, index) => {
-              const isSelectedForThumbnail =
-                formState.thumbnailIndex === index;
-              return (
-                <div
-                  key={photo.id}
-                  className={`relative rounded-lg overflow-hidden border-2 transition ${
-                    isSelectedForThumbnail
-                      ? "border-blue-600 ring-2 ring-blue-200 bg-blue-50/30"
-                      : "border-gray-200 hover:border-gray-300 bg-white"
-                  }`}
-                >
-                  <div className="aspect-square bg-gray-100 relative overflow-hidden">
-                    <img
-                      src={photo.previewUrl}
-                      alt={`사진 ${index + 1}`}
-                      className="w-full h-full object-cover"
-                    />
+          <div onClick={() => photoInputRef.current?.click()} onDragOver={(event) => event.preventDefault()} onDrop={(event) => {
+            event.preventDefault();
+            handlePhotoFiles(event.dataTransfer.files);
+          }} className="cursor-pointer rounded-lg border-2 border-dashed border-slate-200 bg-slate-50 p-5 text-center transition hover:border-blue-400 hover:bg-blue-50">
+            <input ref={photoInputRef} type="file" accept="image/png, image/jpeg, image/webp" multiple className="hidden" onChange={(event) => handlePhotoFiles(event.target.files)} />
+            <Upload className="mx-auto mb-2 h-6 w-6 text-blue-700" />
+            <p className="text-sm font-bold text-slate-800">본문 사진을 올려 글의 흐름과 썸네일 대표 사진을 정해 주세요.</p>
+            <p className="mt-1 text-xs text-slate-500">PNG, JPG, WEBP 파일을 여러 장 선택할 수 있습니다.</p>
+          </div>
 
-                    <span className="absolute top-1 left-1 bg-slate-900/80 text-white text-[9px] font-bold px-1.5 py-0.5 rounded">
-                      [사진 {index + 1}]
-                    </span>
-
-                    <button
-                      type="button"
-                      onClick={(e) => {
-                        e.stopPropagation();
-                        handleRemovePhoto(photo.id, index);
-                      }}
-                      className="absolute top-1 right-1 bg-slate-900/70 hover:bg-red-600 text-white p-0.5 rounded-full transition"
-                      title="삭제"
-                    >
-                      <X className="w-3 h-3" />
-                    </button>
-
-                    {isSelectedForThumbnail && (
-                      <div className="absolute inset-x-0 bottom-0 bg-blue-600 text-white text-[9px] font-bold py-0.5 text-center flex items-center justify-center gap-1">
-                        <CheckCircle2 className="w-2.5 h-2.5" />
-                        <span>대표 썸네일</span>
-                      </div>
-                    )}
+          {formState.photos.length > 0 && (
+            <div className="mt-3 grid max-h-60 grid-cols-3 gap-2 overflow-y-auto pr-1">
+              {formState.photos.map((photo, index) => {
+                const selected = formState.thumbnailIndex === index;
+                return (
+                  <div key={photo.id} className={`overflow-hidden rounded-lg border-2 bg-white ${selected ? "border-blue-700 ring-2 ring-blue-100" : "border-slate-200"}`}>
+                    <div className="relative aspect-square bg-slate-100">
+                      <img src={photo.previewUrl} alt={`업로드 사진 ${index + 1}`} className="h-full w-full object-cover" />
+                      <span className="absolute left-1 top-1 rounded bg-slate-950/80 px-1.5 py-0.5 text-[10px] font-bold text-white">사진 {index + 1}</span>
+                      <button type="button" onClick={() => handleRemovePhoto(photo.id, index)} className="absolute right-1 top-1 rounded-full bg-slate-950/70 p-1 text-white hover:bg-red-600" title="사진 제거">
+                        <X className="h-3 w-3" />
+                      </button>
+                    </div>
+                    <label className={`flex cursor-pointer items-center justify-center gap-1 px-1 py-1.5 text-[11px] font-bold ${selected ? "bg-blue-50 text-blue-700" : "text-slate-600"}`}>
+                      <input type="radio" name="thumbnail-photo" checked={selected} onChange={() => setFormState((prev) => ({ ...prev, thumbnailIndex: index }))} className="h-3 w-3" />
+                      대표 사진
+                    </label>
                   </div>
-
-                  <label
-                    onClick={(e) => e.stopPropagation()}
-                    className={`flex items-center justify-center gap-1 p-1 text-[10px] font-medium cursor-pointer select-none transition ${
-                      isSelectedForThumbnail
-                        ? "text-blue-700 font-bold bg-blue-50"
-                        : "text-slate-600 hover:bg-gray-50"
-                    }`}
-                  >
-                    <input
-                      type="radio"
-                      name="thumbnail_select"
-                      checked={isSelectedForThumbnail}
-                      onChange={() =>
-                        setFormState((prev) => ({
-                          ...prev,
-                          thumbnailIndex: index,
-                        }))
-                      }
-                      className="w-3 h-3 text-blue-600 border-gray-300"
-                    />
-                    <span>썸네일 선택</span>
-                  </label>
-                </div>
-              );
-            })}
-          </div>
-        )}
-
-        {/* 3. Reference PDF Upload (Independent Area) */}
-        <div className="pt-3 border-t border-gray-100">
-          <div className="flex justify-between items-center mb-1.5">
-            <label className="text-xs font-bold text-slate-700 flex items-center gap-1.5">
-              <FileText className="w-3.5 h-3.5 text-blue-600" />
-              <span>2. 레퍼런스 PDF 업로드 (독립 영역)</span>
-            </label>
-            <span className="text-[10px] text-gray-400">선택사항 (.pdf)</span>
-          </div>
-
-          {!formState.pdfFile ? (
-            <div
-              onClick={() => pdfInputRef.current?.click()}
-              onDragOver={(e) => e.preventDefault()}
-              onDrop={(e) => {
-                e.preventDefault();
-                handlePdfFiles(e.dataTransfer.files);
-              }}
-              className="border border-dashed border-gray-300 hover:border-blue-400 bg-gray-50/50 hover:bg-blue-50/20 rounded-lg p-2.5 text-center cursor-pointer transition flex items-center justify-center gap-2"
-            >
-              <input
-                ref={pdfInputRef}
-                type="file"
-                accept="application/pdf"
-                className="hidden"
-                onChange={(e) => handlePdfFiles(e.target.files)}
-              />
-              <div className="w-6 h-6 rounded bg-red-50 text-red-600 flex items-center justify-center shrink-0">
-                <FileUp className="w-3.5 h-3.5" />
-              </div>
-              <p className="text-xs font-medium text-slate-700">
-                스타일 참고용 PDF 문서 파일 선택
-              </p>
-            </div>
-          ) : (
-            <div className="flex items-center justify-between p-2.5 bg-blue-50/40 border border-blue-200/80 rounded-lg">
-              <div className="flex items-center space-x-2 overflow-hidden">
-                <FileText className="w-4 h-4 text-blue-600 shrink-0" />
-                <span className="text-xs font-medium text-slate-800 truncate">
-                  {formState.pdfFileName}
-                </span>
-              </div>
-              <button
-                type="button"
-                onClick={handleRemovePdf}
-                className="p-1 text-gray-400 hover:text-red-600 transition"
-              >
-                <X className="w-3.5 h-3.5" />
-              </button>
+                );
+              })}
             </div>
           )}
-        </div>
-      </div>
+        </section>
+      )}
 
-      {/* 4. Tone & Style Configuration Card */}
-      <div className="bg-white rounded-xl border border-gray-200 p-4 shadow-sm">
-        <h2 className="text-xs font-semibold uppercase tracking-wider text-slate-500 mb-3 flex items-center gap-1.5">
-          <MessageSquare className="w-4 h-4 text-blue-600" />
-          <span>3. 기본 설정 (말투 & 스타일 레벨)</span>
-        </h2>
+      {activePanel === "pdf" && (
+        <section className="space-y-4 rounded-lg border border-slate-200 bg-white p-4 shadow-sm">
+          <div>
+            <h2 className="text-sm font-black text-slate-950">내 글 스타일 참고하기</h2>
+            <p className="mt-1 text-xs leading-5 text-slate-600">
+              내가 이전에 작성한 글을 참고자료로 등록하면 문장 호흡, 말투, 소제목 구성, 이모지 사용 방식 등을 분석해 새 글의 초안에 반영합니다. 기존 글을 그대로 복사하지 않고 분위기만 참고합니다.
+            </p>
+          </div>
 
-        <div className="space-y-4">
-          <div className="space-y-1.5">
-            <label className="text-xs font-bold text-slate-700 block">
-              기본 말투 (Input)
-            </label>
-            <input
-              type="text"
-              value={formState.tone}
-              onChange={(e) =>
-                setFormState((prev) => ({ ...prev, tone: e.target.value }))
-              }
-              placeholder='default: "친근한 해요체"'
-              className="w-full px-3 py-2 bg-gray-50 border border-gray-200 rounded-lg text-xs focus:ring-2 focus:ring-blue-500 outline-none"
-            />
-            <div className="flex flex-wrap gap-1 pt-0.5">
+          <div className="rounded-lg border border-dashed border-slate-300 bg-slate-50 p-3">
+            {!formState.pdfFile ? (
+              <button type="button" onClick={() => pdfInputRef.current?.click()} className="flex w-full items-center justify-center gap-2 text-sm font-bold text-slate-700">
+                <FileUp className="h-4 w-4 text-blue-700" />
+                기존 글 PDF 또는 참고자료 등록
+              </button>
+            ) : (
+              <div className="flex items-center justify-between gap-3">
+                <div className="flex min-w-0 items-center gap-2">
+                  <FileText className="h-4 w-4 shrink-0 text-blue-700" />
+                  <span className="truncate text-sm font-bold text-slate-800">{formState.pdfFileName}</span>
+                </div>
+                <button type="button" onClick={removePdf} className="text-slate-400 hover:text-red-600">
+                  <X className="h-4 w-4" />
+                </button>
+              </div>
+            )}
+            <input ref={pdfInputRef} type="file" accept="application/pdf" className="hidden" onChange={(event) => handlePdfFiles(event.target.files)} />
+          </div>
+          <ul className="space-y-1 rounded-lg bg-slate-50 p-3 text-xs leading-5 text-slate-600">
+            <li>기존 글을 그대로 복사하지 않습니다.</li>
+            <li>문장 구조와 분위기만 참고합니다.</li>
+            <li>결과는 사용자가 직접 수정할 수 있습니다.</li>
+            <li>참고자료가 없으면 선택한 기본 말투로 작성합니다.</li>
+          </ul>
+          {pdfBriefing && (
+            <div className="rounded-lg border border-blue-200 bg-blue-50 p-3">
+              <h3 className="text-xs font-black text-blue-900">PDF 스타일 분석 브리핑</h3>
+              <p className="mt-2 whitespace-pre-line text-xs leading-5 text-slate-700">{pdfBriefing}</p>
+            </div>
+          )}
+        </section>
+      )}
+
+      {activePanel === "style" && (
+        <section className="space-y-4 rounded-lg border border-slate-200 bg-white p-4 shadow-sm">
+          <div>
+            <label className="mb-2 block text-xs font-bold text-slate-700">기본 말투</label>
+            <input value={formState.tone} onChange={(event) => setFormState((prev) => ({ ...prev, tone: event.target.value }))} className="w-full rounded-lg border border-slate-200 bg-slate-50 px-3 py-2 text-sm outline-none focus:border-blue-400 focus:ring-2 focus:ring-blue-100" />
+            <div className="mt-2 flex flex-wrap gap-1.5">
               {TONE_PRESETS.map((preset) => (
-                <button
-                  key={preset}
-                  type="button"
-                  onClick={() =>
-                    setFormState((prev) => ({ ...prev, tone: preset }))
-                  }
-                  className={`text-[10px] px-2 py-0.5 rounded border transition ${
-                    formState.tone === preset
-                      ? "bg-blue-50 border-blue-300 text-blue-700 font-bold"
-                      : "bg-gray-50 border-gray-200 text-slate-600 hover:bg-gray-100"
-                  }`}
-                >
+                <button key={preset} type="button" onClick={() => setFormState((prev) => ({ ...prev, tone: preset }))} className={`rounded border px-2 py-1 text-xs font-bold ${formState.tone === preset ? "border-blue-300 bg-blue-50 text-blue-700" : "border-slate-200 bg-white text-slate-600 hover:bg-slate-50"}`}>
                   {preset}
                 </button>
               ))}
             </div>
           </div>
 
-          <div className="space-y-1.5">
-            <div className="flex justify-between items-center">
-              <label className="text-xs font-bold text-slate-700">
-                스타일 수준 (1~5단계)
+          <div>
+            <div className="mb-2 flex items-center justify-between">
+              <label className="flex items-center gap-1 text-xs font-bold text-slate-700">
+                <Sliders className="h-3.5 w-3.5 text-blue-700" />
+                표현 강도
               </label>
-              <span className="text-xs text-blue-600 font-semibold bg-blue-50 px-2 py-0.5 rounded">
-                Level {formState.styleLevel}
-              </span>
+              <span className="rounded bg-blue-50 px-2 py-1 text-xs font-bold text-blue-700">Level {formState.styleLevel}</span>
             </div>
-            <input
-              type="range"
-              min={1}
-              max={5}
-              step={1}
-              value={formState.styleLevel}
-              onChange={(e) =>
-                setFormState((prev) => ({
-                  ...prev,
-                  styleLevel: parseInt(e.target.value, 10),
-                }))
-              }
-              className="w-full h-1.5 bg-gray-200 rounded-lg appearance-none cursor-pointer accent-blue-600"
-            />
-            <div className="flex justify-between text-[10px] text-gray-400">
-              <span>1단계 (건조함)</span>
-              <span>3단계 (권장)</span>
-              <span>5단계 (감성극대화)</span>
-            </div>
-            <p className="text-[11px] text-slate-600 bg-gray-50 p-2 rounded border border-gray-100 leading-tight">
-              💡 {STYLE_LEVEL_DESCRIPTIONS[formState.styleLevel]}
-            </p>
+            <input type="range" min={1} max={5} value={formState.styleLevel} onChange={(event) => setFormState((prev) => ({ ...prev, styleLevel: parseInt(event.target.value, 10) }))} className="w-full accent-blue-700" />
+            <p className="mt-2 rounded-lg bg-slate-50 p-2 text-xs leading-5 text-slate-600">{STYLE_LEVEL_DESCRIPTIONS[formState.styleLevel]}</p>
+          </div>
+        </section>
+      )}
+
+      {activePanel === "thumbnail" && (
+        <section className="rounded-lg border border-slate-200 bg-white p-4 shadow-sm">
+          <h2 className="text-sm font-black text-slate-950">글과 어울리는 썸네일까지 한 번에</h2>
+          <p className="mt-2 text-xs leading-5 text-slate-600">
+            대표 사진을 선택하면 글의 주제와 분위기를 분석해 메인 문구, 보조 문구와 적절한 배치를 제안합니다. 저장 전 문구, 위치, 색상, 비율을 직접 조정해 주세요.
+          </p>
+          <div className="mt-4 rounded-lg border border-dashed border-slate-300 bg-slate-50 p-3">
+            {!formState.referenceThumbnailPreviewUrl ? (
+              <button type="button" onClick={() => referenceThumbnailInputRef.current?.click()} className="flex w-full items-center justify-center gap-2 text-sm font-bold text-slate-700">
+                <FileUp className="h-4 w-4 text-blue-700" />
+                참고 썸네일 등록
+              </button>
+            ) : (
+              <div className="flex items-center gap-3">
+                <img src={formState.referenceThumbnailPreviewUrl} alt="참고 썸네일" className="h-16 w-16 rounded-md object-cover" />
+                <div className="min-w-0 flex-1">
+                  <p className="truncate text-sm font-bold text-slate-800">{formState.referenceThumbnailFileName}</p>
+                  <p className="mt-1 text-xs leading-5 text-slate-500">글자 위치, 문구 길이, 여백과 전체 분위기만 참고합니다. 특정 이미지를 그대로 복제하지 않습니다.</p>
+                </div>
+                <button type="button" onClick={removeReferenceThumbnail} className="text-slate-400 hover:text-red-600">
+                  <X className="h-4 w-4" />
+                </button>
+              </div>
+            )}
+            <input ref={referenceThumbnailInputRef} type="file" accept="image/png, image/jpeg, image/webp" className="hidden" onChange={(event) => handleReferenceThumbnailFiles(event.target.files)} />
+          </div>
+          <div className="mt-4 grid grid-cols-2 gap-2">
+            {THUMBNAIL_STYLES.map((style) => (
+              <button key={style} type="button" onClick={() => setFormState((prev) => ({ ...prev, userRequest: `${prev.userRequest}\n썸네일 스타일: ${style}`.trim() }))} className="rounded-lg border border-slate-200 bg-slate-50 px-3 py-2 text-left text-xs font-bold text-slate-700 hover:border-blue-300 hover:bg-blue-50">
+                {style}
+              </button>
+            ))}
+          </div>
+          <div className="mt-4">
+            <AdSlot width={300} height={250} label="Sidebar 300x250 광고 영역" className="mx-auto" />
+          </div>
+        </section>
+      )}
+
+      {activePanel === "request" && (
+        <section className="rounded-lg border border-slate-200 bg-white p-4 shadow-sm">
+          <label className="mb-2 flex items-center gap-2 text-sm font-black text-slate-950">
+            <HelpCircle className="h-4 w-4 text-blue-700" />
+            추가 요청사항
+          </label>
+          <textarea
+            rows={6}
+            value={formState.userRequest}
+            onChange={(event) => setFormState((prev) => ({ ...prev, userRequest: event.target.value }))}
+            placeholder="예: 직접 다녀온 느낌을 살리고 싶어요. 가격 정보는 제가 나중에 확인할 예정이니 단정적으로 쓰지 말아 주세요. 썸네일은 문구를 짧게 부탁해요."
+            className="w-full resize-none rounded-lg border border-slate-200 bg-slate-50 p-3 text-sm leading-6 outline-none focus:border-blue-400 focus:ring-2 focus:ring-blue-100"
+          />
+        </section>
+      )}
+
+      <section className="rounded-lg border border-blue-200 bg-blue-50 p-4">
+        <div className="flex gap-3">
+          <ShieldCheck className="mt-0.5 h-5 w-5 shrink-0 text-blue-700" />
+          <div className="text-xs leading-5 text-slate-700">
+            <strong className="block text-sm text-slate-950">복사해서 끝내는 글이 아니라, 수정하기 쉬운 초안을 만듭니다.</strong>
+            자주 사용하는 표현이나 본인의 말투로 문장을 수정하고, 장소와 가격처럼 변할 수 있는 정보는 발행 전에 다시 확인해 주세요.
           </div>
         </div>
-      </div>
+      </section>
 
-      {/* 5. Special Instructions Card */}
-      <div className="bg-white rounded-xl border border-gray-200 p-4 shadow-sm flex flex-col">
-        <div className="flex items-center justify-between mb-2">
-          <label className="text-xs font-bold text-slate-700 flex items-center gap-1.5">
-            <HelpCircle className="w-3.5 h-3.5 text-blue-600" />
-            <span>4. 사용자 추가 요청사항 (Textarea)</span>
-          </label>
-          <span className="text-[10px] font-bold text-red-500">
-            ★ 최우선 적용 지시사항
-          </span>
-        </div>
-        <textarea
-          rows={3}
-          value={formState.userRequest}
-          onChange={(e) =>
-            setFormState((prev) => ({ ...prev, userRequest: e.target.value }))
-          }
-          className="w-full p-2.5 text-xs bg-gray-50 border border-gray-200 rounded-lg focus:ring-2 focus:ring-blue-500 outline-none resize-none"
-          placeholder="이번 글 작성 시 최우선 반영할 지시사항 입력 (예: 내돈내산 강조, 주차 정보 작성, 매장 오시는 길 상세 안내 등)..."
-        />
-      </div>
-
-      {/* 6. Generate Button */}
       <button
         type="button"
         onClick={onSubmit}
-        disabled={isButtonDisabled}
-        className={`py-4 rounded-xl font-bold text-sm shadow-lg transition-all flex items-center justify-center gap-2 cursor-pointer ${
-          isButtonDisabled
-            ? "bg-gray-200 text-gray-400 shadow-none cursor-not-allowed border border-gray-300"
-            : "bg-blue-600 hover:bg-blue-700 text-white shadow-blue-200 hover:shadow-blue-300"
-        }`}
+        disabled={isGenerating}
+        className={`flex items-center justify-center gap-2 rounded-lg py-4 text-sm font-black shadow-sm transition ${isGenerating ? "cursor-not-allowed bg-slate-200 text-slate-400" : "bg-blue-700 text-white hover:bg-blue-800"}`}
       >
         {isGenerating ? (
           <>
-            <div className="w-4 h-4 border-2 border-white border-t-transparent rounded-full animate-spin" />
-            <span>Gemini AI가 블로그 & 썸네일을 생성 중입니다...</span>
+            <div className="h-4 w-4 animate-spin rounded-full border-2 border-white border-t-transparent" />
+            초안과 썸네일 문구 정리 중
           </>
         ) : (
           <>
-            <Sparkles className="w-4 h-4" />
-            <span>AI 블로그 포스트 & 썸네일 생성하기</span>
+            <Sparkles className="h-4 w-4" />
+            수정 가능한 블로그 초안과 썸네일 만들기
           </>
         )}
       </button>
-
-      <p className="text-[11px] text-slate-500 text-center flex items-center justify-center gap-1 font-medium">
-        <span>* 공용 API Key 사용 시 하루 최대 3회 무료 생성이 가능하며, 개인 API Key 입력 시 무제한 사용 가능합니다.</span>
-      </p>
     </div>
   );
 };

@@ -1,15 +1,14 @@
 import React from "react";
 import { AdSlot } from "./AdSlot";
 
-// Rectangle (300x250) on narrow viewports, leaderboard (728x90) once there's room beneath the preview.
 export const FooterAdSlot: React.FC = () => {
   return (
-    <div className="w-full flex justify-center pt-2 mt-2 border-t border-gray-100">
+    <div className="mt-4 flex w-full justify-center border-t border-slate-100 pt-4">
       <div className="hidden sm:block">
-        <AdSlot width={728} height={90} label="하단 배너 광고" />
+        <AdSlot width={728} height={90} label="하단 728x90 광고 영역" />
       </div>
       <div className="block sm:hidden">
-        <AdSlot width={300} height={250} label="하단 사각 광고" />
+        <AdSlot width={300} height={250} label="하단 300x250 광고 영역" />
       </div>
     </div>
   );

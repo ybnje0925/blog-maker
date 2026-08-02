@@ -1,0 +1,18 @@
+export const siteRoutes = [
+  "/",
+  "/guide",
+  "/about",
+  "/privacy",
+  "/guide/before-publishing-ai-draft",
+  "/guide/add-personal-experience",
+  "/guide/keep-my-tone",
+  "/guide/ai-like-sentences",
+  "/guide/many-photos-flow",
+  "/guide/good-title-vs-clickbait",
+  "/guide/short-thumbnail-copy",
+  "/guide/avoid-ad-like-thumbnail",
+  "/guide/how-far-use-ai-tool",
+  "/guide/final-checklist",
+  "/guide/restaurant-review-must-add",
+  "/guide/product-review-human-judgment",
+];

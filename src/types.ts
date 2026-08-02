@@ -14,12 +14,16 @@ export interface GenerationResult {
   blogContent: string;
   thumbnailData: ThumbnailData;
   selectedThumbnailIndex: number;
+  pdfBriefing?: string;
 }
 
 export interface FormState {
   photos: UploadedPhoto[];
   pdfFile: File | null;
   pdfFileName: string | null;
+  referenceThumbnailFile: File | null;
+  referenceThumbnailFileName: string | null;
+  referenceThumbnailPreviewUrl: string | null;
   tone: string;
   styleLevel: number;
   userRequest: string;
