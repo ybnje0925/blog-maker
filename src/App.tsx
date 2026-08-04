@@ -15,11 +15,24 @@ import { InputForm } from "./components/InputForm";
 import { BlogPreview } from "./components/BlogPreview";
 import { ThumbnailPreview } from "./components/ThumbnailPreview";
 import { FooterAdSlot } from "./components/ads/FooterAdSlot";
-import { RewardAdModal } from "./components/ads/RewardAdModal";
 import { FormState, ThumbnailData } from "./types";
 
 const DRAFT_STORAGE_KEY = "blogdraft_local_draft_v2";
 const RESULT_STORAGE_KEY = "blogdraft_generation_result_v2";
+const VERCEL_SAFE_TOTAL_BYTES = 3.8 * 1024 * 1024;
+
+function formatUploadBytes(bytes: number) {
+  if (bytes < 1024 * 1024) return `${Math.round(bytes / 1024)}KB`;
+  return `${(bytes / 1024 / 1024).toFixed(1)}MB`;
+}
+
+function getUploadBytes(state: FormState) {
+  return (
+    state.photos.reduce((sum, photo) => sum + photo.file.size, 0) +
+    (state.pdfFile?.size || 0) +
+    (state.referenceThumbnailFile?.size || 0)
+  );
+}
 
 const initialFormState: FormState = {
   photos: [],
@@ -76,7 +89,6 @@ function HomePage() {
   const [activeTab, setActiveTab] = useState<"blog" | "thumbnail">(sessionActiveTab);
   const [isGenerating, setIsGenerating] = useState(false);
   const [errorMessage, setErrorMessage] = useState<string | null>(null);
-  const [showRewardAdModal, setShowRewardAdModal] = useState(false);
   const [blogContent, setBlogContent] = useState(sessionBlogContent);
   const [thumbnailData, setThumbnailData] = useState<ThumbnailData>(sessionThumbnailData);
   const [pdfBriefing, setPdfBriefing] = useState(sessionPdfBriefing);
@@ -197,11 +209,6 @@ function HomePage() {
       return;
     }
 
-    if (!hasCustomKey) {
-      setShowRewardAdModal(true);
-      return;
-    }
-
     performGenerate();
   };
 
@@ -211,6 +218,10 @@ function HomePage() {
       setErrorMessage(null);
 
       const formData = new FormData();
+      const uploadBytes = getUploadBytes(formState);
+      if (uploadBytes > VERCEL_SAFE_TOTAL_BYTES) {
+        throw new Error(`Vercel 배포 환경의 업로드 제한을 넘었습니다. 현재 ${formatUploadBytes(uploadBytes)}이며, ${formatUploadBytes(VERCEL_SAFE_TOTAL_BYTES)} 이하로 줄여 주세요.`);
+      }
       formState.photos.forEach((photo) => formData.append("photos", photo.file));
       if (formState.pdfFile) formData.append("pdf", formState.pdfFile);
       if (formState.referenceThumbnailFile) formData.append("referenceThumbnail", formState.referenceThumbnailFile);
@@ -226,6 +237,9 @@ function HomePage() {
       try {
         data = JSON.parse(rawText);
       } catch {
+        if (res.status === 413) {
+          throw new Error("업로드 용량이 Vercel 함수 제한을 넘었습니다. 사진 수를 줄이거나 PDF를 더 작은 파일로 올려 주세요.");
+        }
         throw new Error(`서버가 JSON 응답을 반환하지 않았습니다. HTTP ${res.status}`);
       }
 
@@ -367,16 +381,11 @@ function HomePage() {
                   onRecommendCopy={handleRecommendThumbnail}
                 />
               )}
-              <FooterAdSlot />
+              {blogContent.trim().length > 0 && <FooterAdSlot />}
             </div>
           </div>
         </section>
       </main>
-
-      <RewardAdModal isOpen={showRewardAdModal} onClose={() => setShowRewardAdModal(false)} onComplete={() => {
-        setShowRewardAdModal(false);
-        performGenerate();
-      }} />
     </>
   );
 }

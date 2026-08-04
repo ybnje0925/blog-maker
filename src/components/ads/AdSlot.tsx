@@ -17,9 +17,10 @@ export const AdSlot: React.FC<AdSlotProps> = ({ width, height, label, className 
       data-ad-width={width}
       data-ad-height={height}
     >
-      <div className="flex flex-col items-center gap-1 py-2">
+      <div className="flex flex-col items-center gap-1 py-2 text-center">
         <Megaphone className="h-4 w-4" />
-        <span className="text-[10px] font-bold tracking-wide">{label || "광고 영역"} ({width}x{height})</span>
+        <span className="text-[10px] font-bold tracking-wide">DEV AD PLACEHOLDER ({width}x{height})</span>
+        {label && <span className="text-[10px] font-medium">{label}</span>}
       </div>
     </div>
   );

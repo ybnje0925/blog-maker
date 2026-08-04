@@ -4,7 +4,7 @@ import { GoogleGenAI, Type } from "@google/genai";
 
 export const upload = multer({
   storage: multer.memoryStorage(),
-  limits: { fileSize: 30 * 1024 * 1024 },
+  limits: { fileSize: 2 * 1024 * 1024, files: 22 },
 });
 
 const GEMINI_MODEL_CANDIDATES = [
@@ -78,6 +78,9 @@ export function getFriendlyApiError(error: any) {
 
   if (errString.includes("429") || errString.includes("RESOURCE_EXHAUSTED") || errString.includes("Quota exceeded") || errString.includes("Rate Limit")) {
     return { status: 429, message: "API 호출 한도를 초과했습니다. 잠시 뒤 다시 시도하거나 개인 Gemini API Key를 사용해 주세요." };
+  }
+  if (errString.includes("File too large") || errString.includes("LIMIT_FILE_SIZE") || errString.includes("Payload Too Large")) {
+    return { status: 413, message: "업로드 파일이 너무 큽니다. Vercel 배포 환경에서는 이미지를 압축하고 PDF는 1.6MB 이하로 올려 주세요." };
   }
   if (errString.includes("GEMINI_API_KEY")) {
     return { status: 400, message: "Gemini API Key가 설정되어 있지 않습니다. 개인 Gemini API Key를 입력한 뒤 다시 시도해 주세요." };
@@ -210,4 +213,3 @@ ${args.userRequest || "없음"}
     return fallback;
   }
 }
-
