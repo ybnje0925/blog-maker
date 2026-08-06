@@ -71,6 +71,7 @@ export const ThumbnailPreview: React.FC<ThumbnailPreviewProps> = ({ thumbnailDat
   const [fontFamily, setFontFamily] = useState<FontFamily>("sans");
   const [copyIndex, setCopyIndex] = useState(0);
   const [isRecommending, setIsRecommending] = useState(false);
+  const [statusMessage, setStatusMessage] = useState<string | null>(null);
 
   const [mainBox, setMainBox] = useState<TextBox>({ ...PRESETS.CENTER.main, fontSize: 34, color: "#ffffff" });
   const [subBox, setSubBox] = useState<TextBox>({ ...PRESETS.CENTER.sub, fontSize: 16, color: "#fde68a" });
@@ -94,8 +95,8 @@ export const ThumbnailPreview: React.FC<ThumbnailPreviewProps> = ({ thumbnailDat
       if (parsed.fontFamily) setFontFamily(parsed.fontFamily);
       if (parsed.mainBox) setMainBox(parsed.mainBox);
       if (parsed.subBox) setSubBox(parsed.subBox);
-    } catch (error) {
-      console.error("Failed to load thumbnail editor state:", error);
+    } catch {
+      localStorage.removeItem(EDITOR_STORAGE_KEY);
     }
   }, []);
 
@@ -105,8 +106,8 @@ export const ThumbnailPreview: React.FC<ThumbnailPreviewProps> = ({ thumbnailDat
         EDITOR_STORAGE_KEY,
         JSON.stringify({ aspectRatio, boxStyle, darkOverlayOn, textAlign, fontFamily, mainBox, subBox })
       );
-    } catch (error) {
-      console.error("Failed to save thumbnail editor state:", error);
+    } catch {
+      setStatusMessage("썸네일 편집 설정을 브라우저에 저장하지 못했습니다. 저장 공간을 확인해 주세요.");
     }
   }, [aspectRatio, boxStyle, darkOverlayOn, textAlign, fontFamily, mainBox, subBox]);
 
@@ -130,13 +131,15 @@ export const ThumbnailPreview: React.FC<ThumbnailPreviewProps> = ({ thumbnailDat
   };
 
   const recommendCopy = async () => {
+    setStatusMessage(null);
     if (onRecommendCopy) {
       try {
         setIsRecommending(true);
         await onRecommendCopy();
+        setStatusMessage("썸네일 문구를 다시 추천했습니다.");
         return;
       } catch (error: any) {
-        alert(error?.message || "썸네일 문구 재추천 중 오류가 발생했습니다.");
+        setStatusMessage(error?.message || "썸네일 문구 재추천 중 오류가 발생했습니다. 잠시 후 다시 시도해 주세요.");
       } finally {
         setIsRecommending(false);
       }
@@ -146,10 +149,12 @@ export const ThumbnailPreview: React.FC<ThumbnailPreviewProps> = ({ thumbnailDat
     setCopyIndex(nextIndex);
     const [main, sub] = RECOMMENDED_COPY[nextIndex];
     setThumbnailData((prev) => ({ ...prev, thumbnail_main_text: main, thumbnail_sub_text: sub }));
+    setStatusMessage("썸네일 문구 후보를 바꿨습니다.");
   };
 
   const handleDownloadThumbnail = async () => {
     if (!containerRef.current) return;
+    setStatusMessage(null);
     try {
       setIsDownloading(true);
       const canvas = await html2canvas(containerRef.current, { useCORS: true, allowTaint: true, scale: 2, backgroundColor: null });
@@ -157,9 +162,9 @@ export const ThumbnailPreview: React.FC<ThumbnailPreviewProps> = ({ thumbnailDat
       link.href = canvas.toDataURL("image/png");
       link.download = `blogdraft_thumbnail_${Date.now()}.png`;
       link.click();
-    } catch (error) {
-      console.error("Failed to render thumbnail:", error);
-      alert("썸네일 이미지 저장 중 오류가 발생했습니다.");
+      setStatusMessage("썸네일 이미지를 저장했습니다.");
+    } catch {
+      setStatusMessage("썸네일 이미지 저장 중 오류가 발생했습니다. 잠시 후 다시 시도해 주세요.");
     } finally {
       setIsDownloading(false);
     }
@@ -309,6 +314,11 @@ export const ThumbnailPreview: React.FC<ThumbnailPreviewProps> = ({ thumbnailDat
             </>
           )}
         </button>
+        {statusMessage && (
+          <p role="status" className="w-full max-w-[500px] rounded-lg border border-blue-200 bg-blue-50 px-4 py-3 text-sm font-bold text-blue-800">
+            {statusMessage}
+          </p>
+        )}
       </section>
     </div>
   );

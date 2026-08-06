@@ -2,6 +2,19 @@ export interface UploadedPhoto {
   id: string;
   file: File;
   previewUrl: string;
+  originalName: string;
+  originalSize: number;
+  optimizedSize: number;
+  optimizedMimeType: string;
+}
+
+export interface BlobFileMetadata {
+  url: string;
+  pathname?: string;
+  mimeType: string;
+  originalName: string;
+  order?: number;
+  size?: number;
 }
 
 export interface ThumbnailData {
@@ -15,7 +28,11 @@ export interface GenerationResult {
   thumbnailData: ThumbnailData;
   selectedThumbnailIndex: number;
   pdfBriefing?: string;
+  provider?: AIProvider;
+  model?: string;
 }
+
+export type AIProvider = "openai" | "gemini";
 
 export interface FormState {
   photos: UploadedPhoto[];
@@ -28,6 +45,10 @@ export interface FormState {
   styleLevel: number;
   userRequest: string;
   thumbnailIndex: number;
-  userApiKey: string;
+  aiProvider: AIProvider;
+  openaiApiKey: string;
+  geminiApiKey: string;
+  rememberOpenaiApiKey: boolean;
+  rememberGeminiApiKey: boolean;
   privacyConsent: boolean;
 }

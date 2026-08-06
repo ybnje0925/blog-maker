@@ -1,0 +1,10 @@
+<svg xmlns="http://www.w3.org/2000/svg" width="1200" height="630" viewBox="0 0 1200 630" role="img" aria-labelledby="title desc">
+  <title id="title">BlogDraft</title>
+  <desc id="desc">AI 초안을 내 말투와 경험으로 다듬는 BlogDraft 기본 공유 이미지</desc>
+  <rect width="1200" height="630" fill="#eff6ff"/>
+  <rect x="72" y="72" width="1056" height="486" rx="28" fill="#ffffff" stroke="#bfdbfe" stroke-width="4"/>
+  <text x="112" y="158" fill="#1d4ed8" font-family="Arial, sans-serif" font-size="34" font-weight="700" letter-spacing="8">BLOGDRAFT</text>
+  <text x="112" y="278" fill="#020617" font-family="Arial, sans-serif" font-size="70" font-weight="900">글은 내 말투처럼</text>
+  <text x="112" y="366" fill="#020617" font-family="Arial, sans-serif" font-size="70" font-weight="900">썸네일은 내가 만든 것처럼</text>
+  <text x="112" y="462" fill="#475569" font-family="Arial, sans-serif" font-size="32">AI가 정리하고, 사용자가 완성합니다.</text>
+</svg>

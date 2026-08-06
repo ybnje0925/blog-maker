@@ -1,0 +1,22 @@
+{
+  "name": "BlogDraft",
+  "short_name": "BlogDraft",
+  "description": "AI 초안을 내 경험과 말투로 다듬는 블로그 작성 도구",
+  "start_url": "/",
+  "display": "standalone",
+  "background_color": "#eff6ff",
+  "theme_color": "#1d4ed8",
+  "icons": [
+    {
+      "src": "/favicon.svg",
+      "sizes": "64x64",
+      "type": "image/svg+xml"
+    },
+    {
+      "src": "/apple-touch-icon.svg",
+      "sizes": "180x180",
+      "type": "image/svg+xml",
+      "purpose": "any"
+    }
+  ]
+}

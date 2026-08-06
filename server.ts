@@ -3,6 +3,11 @@ import path from "path";
 import multer from "multer";
 import { GoogleGenAI, Type } from "@google/genai";
 import dotenv from "dotenv";
+import { del } from "@vercel/blob";
+import { handleUpload } from "@vercel/blob/client";
+import { blobListToUploadFiles, blobToUploadFile } from "./src/server/blobFiles";
+import { buildRobotsTxt, buildSitemapXml, normalizeBaseUrl } from "./src/sitemap";
+import { generateBlogWithProvider, getFriendlyProviderError, normalizeProvider, recommendThumbnailWithProvider } from "./src/server/ai/provider";
 
 dotenv.config();
 
@@ -16,6 +21,21 @@ const PORT = parseInt(process.env.PORT || "3222", 10);
 
 app.use(express.json({ limit: "50mb" }));
 app.use(express.urlencoded({ extended: true, limit: "50mb" }));
+
+function getBaseUrl(req: express.Request) {
+  const envBaseUrl = process.env.BASE_URL || process.env.VITE_BASE_URL;
+  if (envBaseUrl?.trim()) return normalizeBaseUrl(envBaseUrl);
+  const protocol = req.get("x-forwarded-proto") || req.protocol || "https";
+  return `${protocol}://${req.get("host")}`;
+}
+
+app.get("/robots.txt", (req, res) => {
+  res.type("text/plain").send(buildRobotsTxt(getBaseUrl(req)));
+});
+
+app.get("/sitemap.xml", (req, res) => {
+  res.type("application/xml").send(buildSitemapXml(getBaseUrl(req)));
+});
 
 function getAIClient(userApiKey?: string) {
   const apiKey = userApiKey?.trim() || process.env.GEMINI_API_KEY;
@@ -180,8 +200,43 @@ app.get("/api/health", (_req, res) => {
   res.json({ status: "ok", message: "BlogDraft backend is running" });
 });
 
+app.post("/api/blob-upload", async (req, res) => {
+  try {
+    const jsonResponse = await handleUpload({
+      body: req.body,
+      request: req,
+      onBeforeGenerateToken: async (_pathname, clientPayload) => {
+        const payload = clientPayload ? JSON.parse(clientPayload) : {};
+        return {
+          allowedContentTypes: ["image/jpeg", "image/png", "image/webp", "application/pdf"],
+          addRandomSuffix: true,
+          tokenPayload: JSON.stringify({
+            kind: payload.kind || "file",
+            originalName: payload.originalName || "",
+            order: payload.order ?? null,
+          }),
+        };
+      },
+      onUploadCompleted: async () => undefined,
+    });
+    return res.json(jsonResponse);
+  } catch (error: any) {
+    return res.status(400).json({ error: "임시 파일 업로드를 준비하지 못했습니다. 서버 직접 전송 방식으로 다시 시도합니다." });
+  }
+});
+
+app.post("/api/blob-cleanup", async (req, res) => {
+  try {
+    const urls = Array.isArray(req.body?.urls) ? req.body.urls.filter(Boolean) : [];
+    if (urls.length > 0) await del(urls);
+    return res.json({ success: true });
+  } catch (error: any) {
+    return res.status(500).json({ success: false, error: error?.message || "임시 Blob 삭제 중 오류가 발생했습니다." });
+  }
+});
+
 const uploadMiddleware = upload.fields([
-  { name: "photos", maxCount: 20 },
+  { name: "photos", maxCount: 30 },
   { name: "pdf", maxCount: 1 },
   { name: "referenceThumbnail", maxCount: 1 },
 ]);
@@ -320,6 +375,33 @@ async function generatePdfBriefing(ai: GoogleGenAI, pdfFile: Express.Multer.File
 }
 
 app.post("/api/generate", (req, res) => {
+  if (req.is("application/json")) {
+    (async () => {
+      const provider = normalizeProvider(req.body.aiProvider);
+      try {
+        const photos = Array.isArray(req.body.photos) ? await blobListToUploadFiles(req.body.photos) : [];
+        const pdfFile = req.body.pdf ? await blobToUploadFile(req.body.pdf) : null;
+        const referenceThumbnail = req.body.referenceThumbnail ? await blobToUploadFile(req.body.referenceThumbnail) : null;
+        const result = await generateBlogWithProvider({
+          provider,
+          userApiKey: req.body.userApiKey,
+          photos: photos as any,
+          pdfFile: pdfFile as any,
+          referenceThumbnail: referenceThumbnail as any,
+          tone: (req.body.tone as string) || "친근한 존댓말",
+          styleLevel: (req.body.styleLevel as string) || "3",
+          userRequest: (req.body.userRequest as string) || "",
+          thumbnailIndex: parseInt((req.body.thumbnailIndex as string) || "0", 10),
+        });
+        return res.json({ success: true, ...result });
+      } catch (error: any) {
+        const friendly = getFriendlyProviderError(error, provider);
+        return res.status(friendly.status).json({ success: false, error: friendly.message });
+      }
+    })();
+    return;
+  }
+
   uploadMiddleware(req, res, async (uploadErr) => {
     if (uploadErr) {
       if (uploadErr instanceof multer.MulterError && uploadErr.code === "LIMIT_FILE_SIZE") {
@@ -336,13 +418,31 @@ app.post("/api/generate", (req, res) => {
     }
 
     try {
+      const provider = normalizeProvider(req.body.aiProvider);
+      const providerFiles = req.files as { [fieldname: string]: Express.Multer.File[] } | undefined;
+      const providerPhotos = Array.isArray(req.body.photos) ? await blobListToUploadFiles(req.body.photos) : providerFiles?.photos || [];
+      const providerPdfFile = req.body.pdf ? await blobToUploadFile(req.body.pdf) : providerFiles?.pdf?.[0] || null;
+      const providerReferenceThumbnail = req.body.referenceThumbnail ? await blobToUploadFile(req.body.referenceThumbnail) : providerFiles?.referenceThumbnail?.[0] || null;
+      const result = await generateBlogWithProvider({
+        provider,
+        userApiKey: req.body.userApiKey,
+        photos: providerPhotos as any,
+        pdfFile: providerPdfFile as any,
+        referenceThumbnail: providerReferenceThumbnail as any,
+        tone: (req.body.tone as string) || "친근한 존댓말",
+        styleLevel: (req.body.styleLevel as string) || "3",
+        userRequest: (req.body.userRequest as string) || "",
+        thumbnailIndex: parseInt((req.body.thumbnailIndex as string) || "0", 10),
+      });
+      return res.json({ success: true, ...result });
+
       const userApiKey = req.body.userApiKey as string | undefined;
       const ai = getAIClient(userApiKey);
 
       const files = req.files as { [fieldname: string]: Express.Multer.File[] } | undefined;
-      const photos = files?.photos || [];
-      const pdfFile = files?.pdf?.[0] || null;
-      const referenceThumbnail = files?.referenceThumbnail?.[0] || null;
+      const photos = Array.isArray(req.body.photos) ? await blobListToUploadFiles(req.body.photos) : files?.photos || [];
+      const pdfFile = req.body.pdf ? await blobToUploadFile(req.body.pdf) : files?.pdf?.[0] || null;
+      const referenceThumbnail = req.body.referenceThumbnail ? await blobToUploadFile(req.body.referenceThumbnail) : files?.referenceThumbnail?.[0] || null;
       const tone = (req.body.tone as string) || "친근한 존댓말";
       const styleLevel = (req.body.styleLevel as string) || "3";
       const userRequest = (req.body.userRequest as string) || "";
@@ -393,6 +493,16 @@ app.post("/api/generate", (req, res) => {
 `.trim(),
       });
 
+      partsA.push({
+        text: [
+          "사진 배치 규칙:",
+          "- 업로드 순서와 사진 번호를 유지하고 모든 사진을 최소 1회 포함합니다.",
+          "- 비슷한 사진은 2~4장씩 그리드로 묶습니다.",
+          "- 과정형 사진은 슬라이드로 묶습니다.",
+          "- 단일 사진 태그를 과도하게 반복하지 않습니다.",
+        ].join("\n"),
+      });
+
       const blogResponse = await generateContentWithModelFallback(
         ai,
         {
@@ -406,13 +516,13 @@ app.post("/api/generate", (req, res) => {
       );
 
       const blogContent = blogResponse.text || "# 블로그 초안\n\n초안을 생성하지 못했습니다. 입력 자료를 줄여 다시 시도해 주세요.";
-      const pdfBriefing = await generatePdfBriefing(ai, pdfFile);
+      const pdfBriefing = await generatePdfBriefing(ai, pdfFile as any);
 
       const selectedPhoto = photos[thumbnailIndex] || photos[0] || null;
       const thumbnailData = await generateThumbnailData({
         ai,
-        selectedPhoto,
-        referenceThumbnail,
+        selectedPhoto: selectedPhoto as any,
+        referenceThumbnail: referenceThumbnail as any,
         blogContent,
         userRequest,
       });
@@ -427,7 +537,7 @@ app.post("/api/generate", (req, res) => {
     } catch (error: any) {
       console.error("Error generating content:", error?.message || error);
 
-      const friendly = getFriendlyApiError(error);
+      const friendly = getFriendlyProviderError(error, normalizeProvider(req.body.aiProvider));
       return res.status(friendly.status).json({
         success: false,
         error: friendly.message,
@@ -437,6 +547,29 @@ app.post("/api/generate", (req, res) => {
 });
 
 app.post("/api/recommend-thumbnail", (req, res) => {
+  if (req.is("application/json")) {
+    (async () => {
+      const provider = normalizeProvider(req.body.aiProvider);
+      try {
+        const selectedPhoto = req.body.photo ? await blobToUploadFile(req.body.photo) : null;
+        const referenceThumbnail = req.body.referenceThumbnail ? await blobToUploadFile(req.body.referenceThumbnail) : null;
+        const result = await recommendThumbnailWithProvider({
+          provider,
+          userApiKey: req.body.userApiKey,
+          selectedPhoto: selectedPhoto as any,
+          referenceThumbnail: referenceThumbnail as any,
+          blogContent: (req.body.blogContent as string) || "",
+          userRequest: (req.body.userRequest as string) || "",
+        });
+        return res.json({ success: true, ...result });
+      } catch (error: any) {
+        const friendly = getFriendlyProviderError(error, provider);
+        return res.status(friendly.status).json({ success: false, error: friendly.message });
+      }
+    })();
+    return;
+  }
+
   recommendThumbnailUpload(req, res, async (uploadErr) => {
     if (uploadErr) {
       return res.status(400).json({
@@ -446,18 +579,32 @@ app.post("/api/recommend-thumbnail", (req, res) => {
     }
 
     try {
+      const provider = normalizeProvider(req.body.aiProvider);
+      const providerFiles = req.files as { [fieldname: string]: Express.Multer.File[] } | undefined;
+      const providerSelectedPhoto = req.body.photo ? await blobToUploadFile(req.body.photo) : providerFiles?.photo?.[0] || null;
+      const providerReferenceThumbnail = req.body.referenceThumbnail ? await blobToUploadFile(req.body.referenceThumbnail) : providerFiles?.referenceThumbnail?.[0] || null;
+      const result = await recommendThumbnailWithProvider({
+        provider,
+        userApiKey: req.body.userApiKey,
+        selectedPhoto: providerSelectedPhoto as any,
+        referenceThumbnail: providerReferenceThumbnail as any,
+        blogContent: (req.body.blogContent as string) || "",
+        userRequest: (req.body.userRequest as string) || "",
+      });
+      return res.json({ success: true, ...result });
+
       const userApiKey = req.body.userApiKey as string | undefined;
       const ai = getAIClient(userApiKey);
       const files = req.files as { [fieldname: string]: Express.Multer.File[] } | undefined;
-      const selectedPhoto = files?.photo?.[0] || null;
-      const referenceThumbnail = files?.referenceThumbnail?.[0] || null;
+      const selectedPhoto = req.body.photo ? await blobToUploadFile(req.body.photo) : files?.photo?.[0] || null;
+      const referenceThumbnail = req.body.referenceThumbnail ? await blobToUploadFile(req.body.referenceThumbnail) : files?.referenceThumbnail?.[0] || null;
       const blogContent = (req.body.blogContent as string) || "";
       const userRequest = (req.body.userRequest as string) || "";
 
       const thumbnailData = await generateThumbnailData({
         ai,
-        selectedPhoto,
-        referenceThumbnail,
+        selectedPhoto: selectedPhoto as any,
+        referenceThumbnail: referenceThumbnail as any,
         blogContent,
         userRequest,
       });
@@ -465,7 +612,7 @@ app.post("/api/recommend-thumbnail", (req, res) => {
       return res.json({ success: true, thumbnailData });
     } catch (error: any) {
       console.error("Error recommending thumbnail:", error?.message || error);
-      const friendly = getFriendlyApiError(error);
+      const friendly = getFriendlyProviderError(error, normalizeProvider(req.body.aiProvider));
       return res.status(friendly.status).json({
         success: false,
         error: friendly.message,
@@ -506,7 +653,7 @@ async function startServer() {
   }
 
   app.listen(PORT, "0.0.0.0", () => {
-    console.log(`Server running on http://localhost:${PORT}`);
+    console.info(`Server running on http://localhost:${PORT}`);
   });
 }
 
