@@ -6,7 +6,7 @@ import { AIProvider, BlogGenerationInput, InMemoryUploadFile } from "./types";
 
 export const GEMINI_DEFAULT_MODEL = "gemini-2.5-flash";
 const GEMINI_MODEL_CANDIDATES = Array.from(
-  new Set([process.env.GEMINI_MODEL, "gemini-3.6-flash", "gemini-3.5-flash", GEMINI_DEFAULT_MODEL].filter(Boolean))
+  new Set([process.env.GEMINI_MODEL, GEMINI_DEFAULT_MODEL].filter(Boolean))
 ) as string[];
 
 function withTimeout<T>(promise: Promise<T>, timeoutMs = 60000): Promise<T> {

@@ -22,7 +22,6 @@ export default async function handler(req: any, res: any) {
     const referenceThumbnail = req.body.referenceThumbnail ? await blobToUploadFile(req.body.referenceThumbnail) : null;
     const result = await recommendThumbnailWithProvider({
       provider,
-      userApiKey: req.body.userApiKey,
       selectedPhoto,
       referenceThumbnail,
       blogContent: req.body.blogContent || "",
