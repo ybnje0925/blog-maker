@@ -23,6 +23,7 @@ import { BlobFileMetadata, FormState, ThumbnailData } from "./types";
 import { deleteBlobFiles, uploadFileToBlob } from "./blobUpload";
 import {
   formatBytes,
+  MAX_GENERATE_REQUEST_BODY_BYTES,
   MAX_OPTIMIZED_PHOTOS_BYTES,
   MAX_ORIGINAL_SELECTION_BYTES,
   MAX_PDF_BYTES,
@@ -435,20 +436,28 @@ function HomePage() {
       }
 
       setUploadProgress(`${hasCustomKey ? `개인 ${selectedProviderLabel} API` : "무료 서버 API"}로 생성 요청 중`);
+      const requestPayload = {
+        photos: photoBlobs,
+        pdf: pdfBlob,
+        referenceThumbnail: referenceThumbnailBlob,
+        tone: formState.tone,
+        styleLevel: formState.styleLevel.toString(),
+        userRequest: formState.userRequest,
+        thumbnailIndex: formState.thumbnailIndex.toString(),
+        aiProvider: "gemini",
+        userApiKey: hasCustomKey ? selectedApiKey : undefined,
+      };
+      const requestBody = JSON.stringify(requestPayload);
+      if (new Blob([requestBody]).size > MAX_GENERATE_REQUEST_BODY_BYTES) {
+        throw new Error(
+          "요청 본문이 비정상적으로 큽니다. 임시 파일 업로드가 정상 처리되지 않았을 수 있으니 새로고침 후 다시 시도해 주세요."
+        );
+      }
+
       const res = await fetch("/api/generate", {
         method: "POST",
         headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({
-          photos: photoBlobs,
-          pdf: pdfBlob,
-          referenceThumbnail: referenceThumbnailBlob,
-          tone: formState.tone,
-          styleLevel: formState.styleLevel.toString(),
-          userRequest: formState.userRequest,
-          thumbnailIndex: formState.thumbnailIndex.toString(),
-          aiProvider: "gemini",
-          userApiKey: hasCustomKey ? selectedApiKey : undefined,
-        }),
+        body: requestBody,
       });
       const rawText = await res.text();
       let data: any;
@@ -505,17 +514,25 @@ function HomePage() {
       const referenceThumbnail = formState.referenceThumbnailFile ? await uploadFileToBlob("reference-thumbnail", formState.referenceThumbnailFile, 1, 2) : null;
       if (referenceThumbnail) temporaryBlobs.push(referenceThumbnail);
 
+      const requestPayload = {
+        photo,
+        referenceThumbnail,
+        blogContent,
+        userRequest: formState.userRequest,
+        aiProvider: "gemini",
+        userApiKey: hasCustomKey ? selectedApiKey : undefined,
+      };
+      const requestBody = JSON.stringify(requestPayload);
+      if (new Blob([requestBody]).size > MAX_GENERATE_REQUEST_BODY_BYTES) {
+        throw new Error(
+          "요청 본문이 비정상적으로 큽니다. 임시 파일 업로드가 정상 처리되지 않았을 수 있으니 새로고침 후 다시 시도해 주세요."
+        );
+      }
+
       const res = await fetch("/api/recommend-thumbnail", {
         method: "POST",
         headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({
-          photo,
-          referenceThumbnail,
-          blogContent,
-          userRequest: formState.userRequest,
-          aiProvider: "gemini",
-          userApiKey: hasCustomKey ? selectedApiKey : undefined,
-        }),
+        body: requestBody,
       });
       const data = await res.json();
       if (!res.ok || !data.success) {

@@ -33,7 +33,7 @@ export default async function handler(req: any, res: any) {
     });
 
     return res.status(200).json(jsonResponse);
-  } catch (error: any) {
-    return res.status(400).json({ error: "임시 파일 업로드를 준비하지 못했습니다. 서버 직접 전송 방식으로 다시 시도합니다." });
+  } catch {
+    return res.status(400).json({ error: "임시 파일 업로드를 준비하지 못했습니다. Blob 연결 또는 인증 상태를 확인해 주세요." });
   }
 }

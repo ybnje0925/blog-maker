@@ -13,13 +13,10 @@ function uploadPath(kind: string, fileName: string, index: number) {
   return `blogdraft/tmp/${Date.now()}-${index}-${safeName}`;
 }
 
-function fileToDataUrl(file: File): Promise<string> {
-  return new Promise((resolve, reject) => {
-    const reader = new FileReader();
-    reader.onload = () => resolve(String(reader.result || ""));
-    reader.onerror = () => reject(new Error("파일을 서버 전송 형식으로 준비하지 못했습니다."));
-    reader.readAsDataURL(file);
-  });
+function blobUploadError() {
+  return new Error(
+    "임시 파일 업로드에 실패했습니다. 파일 용량 문제가 아니라 Blob 연결 또는 인증 상태를 확인해야 할 수 있습니다. 새로고침 후 다시 시도해 주세요."
+  );
 }
 
 export async function uploadFileToBlob(
@@ -49,14 +46,7 @@ export async function uploadFileToBlob(
       size: file.size,
     };
   } catch {
-    onProgress?.({ label: file.name, fileIndex: index + 1, fileCount: total, percentage: 100 });
-    return {
-      url: await fileToDataUrl(file),
-      mimeType: file.type || "application/octet-stream",
-      originalName: file.name,
-      order: index,
-      size: file.size,
-    };
+    throw blobUploadError();
   }
 }
 
