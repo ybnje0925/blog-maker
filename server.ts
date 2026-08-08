@@ -1,4 +1,4 @@
-﻿import express from "express";
+import express from "express";
 import path from "path";
 import multer from "multer";
 import { GoogleGenAI, Type } from "@google/genai";
@@ -22,8 +22,12 @@ const PORT = parseInt(process.env.PORT || "3222", 10);
 app.use(express.json({ limit: "50mb" }));
 app.use(express.urlencoded({ extended: true, limit: "50mb" }));
 
+function logOperation(event: string, details: Record<string, unknown>) {
+  console.info(JSON.stringify({ event, at: new Date().toISOString(), ...details }));
+}
+
 function getBaseUrl(req: express.Request) {
-  const envBaseUrl = process.env.BASE_URL || process.env.VITE_BASE_URL;
+  const envBaseUrl = process.env.BASE_URL || process.env.VITE_SITE_URL || process.env.VITE_BASE_URL;
   if (envBaseUrl?.trim()) return normalizeBaseUrl(envBaseUrl);
   const protocol = req.get("x-forwarded-proto") || req.protocol || "https";
   return `${protocol}://${req.get("host")}`;
@@ -37,10 +41,10 @@ app.get("/sitemap.xml", (req, res) => {
   res.type("application/xml").send(buildSitemapXml(getBaseUrl(req)));
 });
 
-function getAIClient() {
-  const apiKey = process.env.GEMINI_API_KEY;
+function getAIClient(userApiKey?: string) {
+  const apiKey = userApiKey?.trim() || process.env.GEMINI_API_KEY;
   if (!apiKey) {
-    throw new Error("GEMINI_API_KEY가 서버 환경변수에 설정되어 있지 않습니다.");
+    throw new Error("GEMINI_API_KEY가 설정되어 있지 않습니다. 개인 Gemini API Key를 입력하거나 서버 환경 변수를 확인해 주세요.");
   }
 
   return new GoogleGenAI({
@@ -53,7 +57,7 @@ function getAIClient() {
 
 function withTimeout<T>(promise: Promise<T>, timeoutMs = 60000): Promise<T> {
   return new Promise((resolve, reject) => {
-    const timer = setTimeout(() => reject(new Error("TIMEOUT_ERROR: API ?묐떟 ?쒓컙??珥덇낵?섏뿀?듬땲??")), timeoutMs);
+    const timer = setTimeout(() => reject(new Error("TIMEOUT_ERROR: API 응답 시간이 초과되었습니다.")), timeoutMs);
     promise
       .then((result) => {
         clearTimeout(timer);
@@ -68,6 +72,8 @@ function withTimeout<T>(promise: Promise<T>, timeoutMs = 60000): Promise<T> {
 
 const GEMINI_MODEL_CANDIDATES = [
   process.env.GEMINI_MODEL,
+  "gemini-3.6-flash",
+  "gemini-3.5-flash",
   "gemini-2.5-flash",
 ].filter(Boolean) as string[];
 
@@ -118,80 +124,80 @@ function getFriendlyApiError(error: any) {
   if (errString.includes("429") || errString.includes("RESOURCE_EXHAUSTED") || errString.includes("Quota exceeded") || errString.includes("Rate Limit")) {
     return {
       status: 429,
-      message: "API 호출 한도를 초과했습니다. 잠시 후 다시 시도해 주세요.",
+      message: "API 호출 한도를 초과했습니다. 잠시 뒤 다시 시도하거나 개인 Gemini API Key를 사용해 주세요.",
     };
   }
 
   if (errString.includes("GEMINI_API_KEY")) {
     return {
       status: 400,
-      message: "Gemini API Key가 서버 환경변수에 설정되어 있지 않습니다.",
+      message: "Gemini API Key가 서버에 설정되어 있지 않습니다. 개인 Gemini API Key를 입력한 뒤 다시 시도해 주세요.",
     };
   }
 
   if (errString.includes("API key not valid") || errString.includes("API_KEY_INVALID") || errString.includes("PERMISSION_DENIED") || statusStr === "401" || statusStr === "403") {
     return {
       status: 400,
-      message: "Gemini API Key가 올바르지 않거나 해당 모델 사용 권한이 없습니다. 서버 환경변수를 확인해 주세요.",
+      message: "Gemini API Key가 올바르지 않거나 해당 모델 사용 권한이 없습니다. AI Studio에서 새 API Key를 발급해 다시 입력해 주세요.",
     };
   }
 
   if (errString.includes("TIMEOUT_ERROR")) {
     return {
       status: 504,
-      message: "Gemini API ?묐떟 ?쒓컙??珥덇낵?섏뿀?듬땲?? ?대?吏 ?섎? 以꾩씠嫄곕굹 PDF ?⑸웾????떠 ?ㅼ떆 ?쒕룄??二쇱꽭??",
+      message: "Gemini API 응답 시간이 초과되었습니다. 이미지 수를 줄이거나 PDF 용량을 낮춰 다시 시도해 주세요.",
     };
   }
 
   if (isModelFallbackError(error)) {
     return {
       status: 400,
-      message: "?꾩옱 API Key?먯꽌 ?ъ슜?????덈뒗 Gemini 紐⑤뜽??李얠? 紐삵뻽?듬땲?? ?쒕쾭??GEMINI_MODEL ?ㅼ젙 ?먮뒗 API Key 沅뚰븳???뺤씤??二쇱꽭??",
+      message: "현재 API Key에서 사용할 수 있는 Gemini 모델을 찾지 못했습니다. 서버의 GEMINI_MODEL 설정 또는 API Key 권한을 확인해 주세요.",
     };
   }
 
   return {
     status: 500,
-    message: `?쒕쾭 泥섎━ 以??ㅻ쪟媛 諛쒖깮?덉뒿?덈떎. ?몃? ?ㅻ쪟: ${errString.slice(0, 220) || "?????녿뒗 ?ㅻ쪟"}`,
+    message: `서버 처리 중 오류가 발생했습니다. 세부 오류: ${errString.slice(0, 220) || "알 수 없는 오류"}`,
   };
 }
 
 const SYSTEM_PROMPT_A = `
-?뱀떊? BlogDraft??釉붾줈洹?珥덉븞 ?몄쭛 ?꾩슦誘몄엯?덈떎.
+당신은 BlogDraft의 블로그 초안 편집 도우미입니다.
 
-?듭떖 ?먯튃:
-- AI媛 釉붾줈洹몃? ????꾩꽦?섍굅??諛쒗뻾?쒕떎怨?留먰븯吏 ?딆뒿?덈떎.
-- ?ъ슜?먭? ?먯떊??寃쏀뿕, ?ъ떎 ?뺤씤, 留먰닾 ?섏젙???뷀븯湲??ъ슫 "?섏젙 媛?ν븳 珥덉븞"???묒꽦?⑸땲??
-- "?대┃ ??踰덉쑝濡??꾩꽦", "寃???몄텧 蹂댁옣", "??덉쭏 ?뚰뵾 蹂댁옣" 媛숈? 怨쇱옣 ?쒗쁽? ?덈? ?곗? ?딆뒿?덈떎.
-- ?μ냼, 媛寃? ?댁쁺?쒓컙, ?쒗뭹 ?ъ뼇泥섎읆 蹂?????덈뒗 ?뺣낫???⑥젙?섏? 留먭퀬 ?ъ슜?먭? ?뺤씤?섎룄濡??먯뿰?ㅻ읇寃??④퉩?덈떎.
-- 李멸퀬 PDF媛 ?덉쑝硫?臾몄옣 ?명씉, 留먰닾, ?⑤씫 援ъ꽦, ?뚯젣紐??뺤떇, ?대え吏 ?ъ슜 諛⑹떇留?李멸퀬?⑸땲?? 湲곗〈 臾몄옣??洹몃?濡?蹂듭궗?섏? ?딆뒿?덈떎.
-- 李멸퀬 PDF???ъ슜???붿껌?먯꽌 ?대え吏 ?ъ슜??蹂댁씠硫???珥덉븞?먮룄 鍮꾩듂??鍮덈룄? ?꾩튂濡??먯뿰?ㅻ읇寃?諛섏쁺?⑸땲?? ?대え吏媛 ?꾪? ?녿뒗 ?ㅽ??쇱씠硫?怨쇳븯寃??ｌ? ?딆뒿?덈떎.
-- ?대え吏??臾몃떒留덈떎 ?듭?濡?遺숈씠吏 留먭퀬, ?뚯젣紐⑹씠??吏㏃? 媛먯긽 臾몄옣??3~8媛??뺣룄 ?먯뿰?ㅻ읇寃??욎뒿?덈떎.
-- ?ъ쭊???덉쑝硫?湲???먮쫫??留욊쾶 ?ъ쭊 諛곗튂 ?쒓렇瑜??ы븿?⑸땲??
+핵심 원칙:
+- AI가 블로그를 대신 완성하거나 발행한다고 말하지 않습니다.
+- 사용자가 자신의 경험, 사실 확인, 말투 수정을 더하기 쉬운 "수정 가능한 초안"을 작성합니다.
+- "클릭 한 번으로 완성", "검색 노출 보장", "저품질 회피 보장" 같은 과장 표현은 절대 쓰지 않습니다.
+- 장소, 가격, 운영시간, 제품 사양처럼 변할 수 있는 정보는 단정하지 말고 사용자가 확인하도록 자연스럽게 남깁니다.
+- 참고 PDF가 있으면 문장 호흡, 말투, 단락 구성, 소제목 형식, 이모지 사용 방식만 참고합니다. 기존 문장을 그대로 복사하지 않습니다.
+- 참고 PDF나 사용자 요청에서 이모지 사용이 보이면 새 초안에도 비슷한 빈도와 위치로 자연스럽게 반영합니다. 이모지가 전혀 없는 스타일이면 과하게 넣지 않습니다.
+- 이모지는 문단마다 억지로 붙이지 말고, 소제목이나 짧은 감상 문장에 3~8개 정도 자연스럽게 섞습니다.
+- 사진이 있으면 글의 흐름에 맞게 사진 배치 태그를 포함합니다.
 
-?ъ쭊 ?쒓렇 洹쒖튃:
-- ?⑥씪 ?ъ쭊: [?ъ쭊 1]
-- ?щ윭 ?ъ쭊 鍮꾧탳???뷀뀒?? [?ъ쭊洹몃━?? 1,2,3]
-- 怨쇱젙?대굹 ?쒖꽌媛 以묒슂???ъ쭊: [?ъ쭊?щ씪?대뱶: 1,2,3]
-- ?낅줈?쒕맂 ?ъ쭊? 媛?ν븳 ??紐⑤몢 ??踰??댁긽 ?먯뿰?ㅻ읇寃?諛곗튂?⑸땲??
+사진 태그 규칙:
+- 단일 사진: [사진 1]
+- 여러 사진 비교나 디테일: [사진그리드: 1,2,3]
+- 과정이나 순서가 중요한 사진: [사진슬라이드: 1,2,3]
+- 업로드된 사진은 가능한 한 모두 한 번 이상 자연스럽게 배치합니다.
 
-異쒕젰 ?뺤떇:
-- 留덊겕?ㅼ슫?쇰줈 ?묒꽦?⑸땲??
-- ?쒕ぉ, ?꾩엯, 蹂몃Ц ?뚯젣紐? ?ъ쭊 諛곗튂 ?쒓렇, 留덈Т由? "諛쒗뻾 ???닿? ?뷀븯硫?醫뗭? ?댁슜" ?뱀뀡???ы븿?⑸땲??
-- 李멸퀬 PDF???대え吏媛 ?덉뿀?ㅻ㈃ ?뚯젣紐⑹씠??吏㏃? 媛뺤“ 臾몄옣??鍮꾩듂??諛⑹떇?쇰줈 ?대え吏瑜??쇰? 諛섏쁺?⑸땲??
-- 留덉?留??뱀뀡?먮뒗 ?ㅼ젣 寃쏀뿕, 媛寃??꾩튂/?댁쁺?쒓컙 ?뺤씤, ??留먰닾濡??섏젙??臾몄옣 ?먭????덈궡?⑸땲??
+출력 형식:
+- 마크다운으로 작성합니다.
+- 제목, 도입, 본문 소제목, 사진 배치 태그, 마무리, "발행 전 내가 더하면 좋은 내용" 섹션을 포함합니다.
+- 참고 PDF에 이모지가 있었다면 소제목이나 짧은 강조 문장에 비슷한 방식으로 이모지를 일부 반영합니다.
+- 마지막 섹션에는 실제 경험, 가격/위치/운영시간 확인, 내 말투로 수정할 문장 점검을 안내합니다.
 `.trim();
 
 const SYSTEM_PROMPT_B = `
-?뱀떊? BlogDraft???몃꽕??臾멸뎄 ?쒖븞 ?꾩슦誘몄엯?덈떎.
+당신은 BlogDraft의 썸네일 문구 제안 도우미입니다.
 
-?듭떖 ?먯튃:
-- ?쇰쪧?곸씤 AI ?몃꽕?쇱쿂??蹂댁씠??怨쇱옣 臾멸뎄瑜??쇳빀?덈떎.
-- ?ъ슜?먭? 吏곸젒 留뚮뱺 寃껋쿂???먯뿰?ㅻ읇寃??섏젙?섍린 ?ъ슫 吏㏃? 臾멸뎄瑜??쒖븞?⑸땲??
-- 湲 ?댁슜怨?留욎? ?딅뒗 ?싳떆???쒗쁽, 寃???몄텧 蹂댁옣 ?쒗쁽, 怨쇱옣???섏튂 ?쒗쁽? ?곗? ?딆뒿?덈떎.
-- ????ъ쭊怨?釉붾줈洹?湲??遺꾩쐞湲곗뿉 ?댁슱由щ뒗 硫붿씤 臾멸뎄, ?쒕툕 臾멸뎄, 諛곗튂 ?꾩튂瑜??쒖븞?⑸땲??
+핵심 원칙:
+- 일률적인 AI 썸네일처럼 보이는 과장 문구를 피합니다.
+- 사용자가 직접 만든 것처럼 자연스럽게 수정하기 쉬운 짧은 문구를 제안합니다.
+- 글 내용과 맞지 않는 낚시성 표현, 검색 노출 보장 표현, 과장된 수치 표현은 쓰지 않습니다.
+- 대표 사진과 블로그 글의 분위기에 어울리는 메인 문구, 서브 문구, 배치 위치를 제안합니다.
 
-JSON?쇰줈留??묐떟?섏꽭??
+JSON으로만 응답하세요.
 `.trim();
 
 app.get("/api/health", (_req, res) => {
@@ -219,7 +225,7 @@ app.post("/api/blob-upload", async (req, res) => {
     });
     return res.json(jsonResponse);
   } catch (error: any) {
-    return res.status(400).json({ error: "?꾩떆 ?뚯씪 ?낅줈?쒕? 以鍮꾪븯吏 紐삵뻽?듬땲?? ?쒕쾭 吏곸젒 ?꾩넚 諛⑹떇?쇰줈 ?ㅼ떆 ?쒕룄?⑸땲??" });
+    return res.status(400).json({ error: "임시 파일 업로드를 준비하지 못했습니다. 서버 직접 전송 방식으로 다시 시도합니다." });
   }
 });
 
@@ -229,7 +235,7 @@ app.post("/api/blob-cleanup", async (req, res) => {
     if (urls.length > 0) await del(urls);
     return res.json({ success: true });
   } catch (error: any) {
-    return res.status(500).json({ success: false, error: error?.message || "?꾩떆 Blob ??젣 以??ㅻ쪟媛 諛쒖깮?덉뒿?덈떎." });
+    return res.status(500).json({ success: false, error: error?.message || "임시 Blob 삭제 중 오류가 발생했습니다." });
   }
 });
 
@@ -260,7 +266,7 @@ async function generateThumbnailData(args: {
         data: args.selectedPhoto.buffer.toString("base64"),
       },
     });
-    partsB.push({ text: "[????ъ쭊] ?몃꽕??諛곌꼍?쇰줈 ?좏깮???대?吏?낅땲??" });
+    partsB.push({ text: "[대표 사진] 썸네일 배경으로 선택된 이미지입니다." });
   }
 
   if (args.referenceThumbnail) {
@@ -271,27 +277,27 @@ async function generateThumbnailData(args: {
       },
     });
     partsB.push({
-      text: "[李멸퀬 ?몃꽕?? ???대?吏??留ㅼ슦 以묒슂???ㅽ???李멸퀬?먮즺?낅땲?? 湲???꾩튂, ?뺣젹 諛⑺뼢, 臾멸뎄 以??? 臾멸뎄 湲몄씠, ?щ갚 ?ш린, 諛곌꼍 ?대몼寃?泥섎━ ?щ?, ?띿뒪??諛뺤뒪/洹몃┝???먮굦, ?꾩껜 遺꾩쐞湲곕? 遺꾩꽍??媛?ν븳 ??鍮꾩듂??援ъ꽦?쇰줈 ?쒖븞?섏꽭?? ?? ?뱀젙 ?대?吏???붿옄?몄쓣 洹몃?濡?蹂듭젣?섏? 留먭퀬 援ъ꽦怨?遺꾩쐞湲곕쭔 李멸퀬?섏꽭??",
+      text: "[참고 썸네일] 이 이미지는 매우 중요한 스타일 참고자료입니다. 글자 위치, 정렬 방향, 문구 줄 수, 문구 길이, 여백 크기, 배경 어둡게 처리 여부, 텍스트 박스/그림자 느낌, 전체 분위기를 분석해 가능한 한 비슷한 구성으로 제안하세요. 단, 특정 이미지나 디자인을 그대로 복제하지 말고 구성과 분위기만 참고하세요.",
     });
   }
 
   partsB.push({
     text: `
-釉붾줈洹?珥덉븞 ?쇰?:
+블로그 초안 일부:
 ${args.blogContent.slice(0, 1600)}
 
-?ъ슜???붿껌?ы빆:
-${args.userRequest || "?놁쓬"}
+사용자 요청사항:
+${args.userRequest || "없음"}
 
-?꾨옒 ?ㅽ궎留덉뿉 留욎떠 ?먯뿰?ㅻ읇怨??섏젙?섍린 ?ъ슫 ?몃꽕??臾멸뎄瑜??쒖븞?섏꽭??
-李멸퀬 ?몃꽕?쇱씠 ?덉쑝硫?臾멸뎄 湲몄씠? 諛곗튂 ?꾩튂瑜?洹?李멸퀬 ?대?吏??理쒕???媛源앷쾶 留욎텛?몄슂.
-layout_position? 李멸퀬 ?몃꽕?쇱쓽 ?띿뒪???꾩튂? 媛??媛源뚯슫 媛믪쓣 怨좊Ⅴ?몄슂.
+아래 스키마에 맞춰 자연스럽고 수정하기 쉬운 썸네일 문구를 제안하세요.
+참고 썸네일이 있으면 문구 길이와 배치 위치를 그 참고 이미지에 최대한 가깝게 맞추세요.
+layout_position은 참고 썸네일의 텍스트 위치와 가장 가까운 값을 고르세요.
 `.trim(),
   });
 
   const fallback = {
-    thumbnail_main_text: "?닿? ?꾩꽦?섎뒗 湲곕줉",
-    thumbnail_sub_text: "珥덉븞??寃쏀뿕???뷀빐 ?뺣━",
+    thumbnail_main_text: "내가 완성하는 기록",
+    thumbnail_sub_text: "초안에 경험을 더해 정리",
     layout_position: "CENTER",
   };
 
@@ -306,9 +312,9 @@ layout_position? 李멸퀬 ?몃꽕?쇱쓽 ?띿뒪???꾩튂? 媛??媛源�
           responseSchema: {
             type: Type.OBJECT,
             properties: {
-              thumbnail_main_text: { type: Type.STRING, description: "15???덊뙉??硫붿씤 臾멸뎄" },
-              thumbnail_sub_text: { type: Type.STRING, description: "20???덊뙉???쒕툕 臾멸뎄" },
-              layout_position: { type: Type.STRING, description: "CENTER, BOTTOM_LEFT, TOP_BANNER 以??섎굹" },
+              thumbnail_main_text: { type: Type.STRING, description: "15자 안팎의 메인 문구" },
+              thumbnail_sub_text: { type: Type.STRING, description: "20자 안팎의 서브 문구" },
+              layout_position: { type: Type.STRING, description: "CENTER, BOTTOM_LEFT, TOP_BANNER 중 하나" },
             },
             required: ["thumbnail_main_text", "thumbnail_sub_text", "layout_position"],
           },
@@ -347,17 +353,18 @@ async function generatePdfBriefing(ai: GoogleGenAI, pdfFile: Express.Multer.File
             },
             {
               text: `
-泥⑤???PDF瑜?BlogDraft 李멸퀬?먮즺 愿?먯뿉??4以??대궡濡?釉뚮━?묓븯?몄슂.
-- 臾몄옣 ?명씉怨?留먰닾
-- ?⑤씫/?뚯젣紐?援ъ꽦
-- ?대え吏???뱀닔臾몄옄 ?ъ슜 諛⑹떇
-- ??珥덉븞??李멸퀬????湲곗〈 臾몄옣??洹몃?濡??몄슜?섍굅??蹂듭궗?섏? 留먭퀬, ?ㅽ???遺꾩꽍留??붿빟?섏꽭??
+첨부된 PDF를 BlogDraft 참고자료 관점에서 4줄 이내로 브리핑하세요.
+- 문장 호흡과 말투
+- 단락/소제목 구성
+- 이모지나 특수문자 사용 방식
+- 새 초안에 참고할 점
+기존 문장을 그대로 인용하거나 복사하지 말고, 스타일 분석만 요약하세요.
 `.trim(),
             },
           ],
         },
         config: {
-          systemInstruction: "?뱀떊? 釉붾줈洹?湲 ?ㅽ??쇱쓣 媛꾨떒??遺꾩꽍???ъ슜?먯뿉寃??ㅻ챸?섎뒗 ?몄쭛 ?꾩슦誘몄엯?덈떎.",
+          systemInstruction: "당신은 블로그 글 스타일을 간단히 분석해 사용자에게 설명하는 편집 도우미입니다.",
           temperature: 0.2,
         },
       },
@@ -367,7 +374,7 @@ async function generatePdfBriefing(ai: GoogleGenAI, pdfFile: Express.Multer.File
     return response.text?.trim() || "";
   } catch (error) {
     console.error("PDF briefing warning:", error);
-    return "PDF 李멸퀬?먮즺瑜?泥⑤??덉뒿?덈떎. 臾몄옣 ?명씉, 留먰닾, ?⑤씫 援ъ꽦怨??쒗쁽 諛⑹떇? 珥덉븞 ?앹꽦??李멸퀬?⑸땲??";
+    return "PDF 참고자료를 첨부했습니다. 문장 호흡, 말투, 단락 구성과 표현 방식은 초안 생성에 참고됩니다.";
   }
 }
 
@@ -375,23 +382,47 @@ app.post("/api/generate", (req, res) => {
   if (req.is("application/json")) {
     (async () => {
       const provider = normalizeProvider(req.body.aiProvider);
+      const startedAt = Date.now();
+      let photoCount = 0;
+      let hasPdf = false;
+      let hasReferenceThumbnail = false;
       try {
         const photos = Array.isArray(req.body.photos) ? await blobListToUploadFiles(req.body.photos) : [];
         const pdfFile = req.body.pdf ? await blobToUploadFile(req.body.pdf) : null;
         const referenceThumbnail = req.body.referenceThumbnail ? await blobToUploadFile(req.body.referenceThumbnail) : null;
+        photoCount = photos.length;
+        hasPdf = Boolean(pdfFile);
+        hasReferenceThumbnail = Boolean(referenceThumbnail);
         const result = await generateBlogWithProvider({
           provider,
+          userApiKey: req.body.userApiKey,
           photos: photos as any,
           pdfFile: pdfFile as any,
           referenceThumbnail: referenceThumbnail as any,
-          tone: (req.body.tone as string) || "친근한 조언말",
+          tone: (req.body.tone as string) || "친근한 존댓말",
           styleLevel: (req.body.styleLevel as string) || "3",
           userRequest: (req.body.userRequest as string) || "",
           thumbnailIndex: parseInt((req.body.thumbnailIndex as string) || "0", 10),
         });
+        logOperation("generate_success", {
+          provider,
+          model: result.model || "unknown",
+          photoCount,
+          hasPdf,
+          hasReferenceThumbnail,
+          requestMs: Date.now() - startedAt,
+        });
         return res.json({ success: true, ...result });
       } catch (error: any) {
         const friendly = getFriendlyProviderError(error, provider);
+        logOperation("generate_fail", {
+          provider,
+          status: friendly.status,
+          photoCount,
+          hasPdf,
+          hasReferenceThumbnail,
+          requestMs: Date.now() - startedAt,
+        });
         return res.status(friendly.status).json({ success: false, error: friendly.message });
       }
     })();
@@ -403,13 +434,13 @@ app.post("/api/generate", (req, res) => {
       if (uploadErr instanceof multer.MulterError && uploadErr.code === "LIMIT_FILE_SIZE") {
         return res.status(413).json({
           success: false,
-          error: "?낅줈?쒗븳 ?ъ쭊 ?먮뒗 PDF ?⑸웾???덈Т ?쎈땲?? ?뚯씪 ?섎굹 ?⑸웾??以꾩씤 ???ㅼ떆 ?쒕룄??二쇱꽭??",
+          error: "업로드한 사진 또는 PDF 용량이 너무 큽니다. 파일 수나 용량을 줄인 뒤 다시 시도해 주세요.",
         });
       }
 
       return res.status(400).json({
         success: false,
-        error: `?뚯씪 ?낅줈??泥섎━ 以??ㅻ쪟媛 諛쒖깮?덉뒿?덈떎: ${uploadErr.message}`,
+        error: `파일 업로드 처리 중 오류가 발생했습니다: ${uploadErr.message}`,
       });
     }
 
@@ -421,23 +452,25 @@ app.post("/api/generate", (req, res) => {
       const providerReferenceThumbnail = req.body.referenceThumbnail ? await blobToUploadFile(req.body.referenceThumbnail) : providerFiles?.referenceThumbnail?.[0] || null;
       const result = await generateBlogWithProvider({
         provider,
+        userApiKey: req.body.userApiKey,
         photos: providerPhotos as any,
         pdfFile: providerPdfFile as any,
         referenceThumbnail: providerReferenceThumbnail as any,
-        tone: (req.body.tone as string) || "친근한 조언말",
+        tone: (req.body.tone as string) || "친근한 존댓말",
         styleLevel: (req.body.styleLevel as string) || "3",
         userRequest: (req.body.userRequest as string) || "",
         thumbnailIndex: parseInt((req.body.thumbnailIndex as string) || "0", 10),
       });
       return res.json({ success: true, ...result });
 
-      const ai = getAIClient();
+      const userApiKey = req.body.userApiKey as string | undefined;
+      const ai = getAIClient(userApiKey);
 
       const files = req.files as { [fieldname: string]: Express.Multer.File[] } | undefined;
       const photos = Array.isArray(req.body.photos) ? await blobListToUploadFiles(req.body.photos) : files?.photos || [];
       const pdfFile = req.body.pdf ? await blobToUploadFile(req.body.pdf) : files?.pdf?.[0] || null;
       const referenceThumbnail = req.body.referenceThumbnail ? await blobToUploadFile(req.body.referenceThumbnail) : files?.referenceThumbnail?.[0] || null;
-      const tone = (req.body.tone as string) || "친근한 조언말";
+      const tone = (req.body.tone as string) || "친근한 존댓말";
       const styleLevel = (req.body.styleLevel as string) || "3";
       const userRequest = (req.body.userRequest as string) || "";
       const thumbnailIndex = parseInt((req.body.thumbnailIndex as string) || "0", 10);
@@ -452,11 +485,11 @@ app.post("/api/generate", (req, res) => {
           },
         });
         partsA.push({
-          text: `[??湲 ?ㅽ???李멸퀬?먮즺] ${pdfFile.originalname} ?뚯씪??泥⑤??섏뿀?듬땲?? 湲곗〈 臾몄옣??蹂듭궗?섏? 留먭퀬 臾몄옣 ?명씉, 留먰닾, ?⑤씫 援ъ꽦, ?뚯젣紐?諛⑹떇留?李멸퀬?섏꽭??`,
+          text: `[내 글 스타일 참고자료] ${pdfFile.originalname} 파일이 첨부되었습니다. 기존 문장을 복사하지 말고 문장 호흡, 말투, 단락 구성, 소제목 방식만 참고하세요.`,
         });
       } else {
         partsA.push({
-          text: "[??湲 ?ㅽ???李멸퀬?먮즺] 泥⑤???PDF媛 ?놁뒿?덈떎. ?좏깮??湲곕낯 留먰닾? ?ъ슜???붿껌?ы빆??湲곗??쇰줈 珥덉븞???묒꽦?섏꽭??",
+          text: "[내 글 스타일 참고자료] 첨부된 PDF가 없습니다. 선택한 기본 말투와 사용자 요청사항을 기준으로 초안을 작성하세요.",
         });
       }
 
@@ -468,32 +501,32 @@ app.post("/api/generate", (req, res) => {
               data: photo.buffer.toString("base64"),
             },
           });
-          partsA.push({ text: `[?ъ쭊 ${idx + 1}] ${photo.originalname || `?ъ쭊 ${idx + 1}`}` });
+          partsA.push({ text: `[사진 ${idx + 1}] ${photo.originalname || `사진 ${idx + 1}`}` });
         });
       } else {
-        partsA.push({ text: "[?ъ쭊] ?낅줈?쒕맂 ?ъ쭊???놁뒿?덈떎. ?ъ쭊 諛곗튂 ?쒓렇 ?놁씠 湲 珥덉븞留??묒꽦?섏꽭??" });
+        partsA.push({ text: "[사진] 업로드된 사진이 없습니다. 사진 배치 태그 없이 글 초안만 작성하세요." });
       }
 
       partsA.push({
         text: `
-?낅젰 議곌굔:
-- ?낅줈???ъ쭊 ?? ${photos.length}
-- 湲곕낯 留먰닾: ${tone}
-- ?쒗쁽 媛뺣룄: ${styleLevel}/5
-- ?ъ슜??異붽? ?붿껌?ы빆: ${userRequest || "?놁쓬"}
+입력 조건:
+- 업로드 사진 수: ${photos.length}
+- 기본 말투: ${tone}
+- 표현 강도: ${styleLevel}/5
+- 사용자 추가 요청사항: ${userRequest || "없음"}
 
-紐⑺몴:
-?ъ쭊怨?湲곗〈 湲??諛뷀깢?쇰줈 ??留먰닾??媛源뚯슫 釉붾줈洹?珥덉븞??留뚮뱾怨? ?ъ슜?먭? 寃쏀뿕怨??ъ떎 ?뺤씤???뷀빐 ?꾩꽦?????덇쾶 ?묒꽦?섏꽭??
+목표:
+사진과 기존 글을 바탕으로 내 말투에 가까운 블로그 초안을 만들고, 사용자가 경험과 사실 확인을 더해 완성할 수 있게 작성하세요.
 `.trim(),
       });
 
       partsA.push({
         text: [
-          "?ъ쭊 諛곗튂 洹쒖튃:",
-          "- ?낅줈???쒖꽌? ?ъ쭊 踰덊샇瑜??좎??섍퀬 紐⑤뱺 ?ъ쭊??理쒖냼 1???ы븿?⑸땲??",
-          "- 鍮꾩듂???ъ쭊? 2~4?μ뵫 洹몃━?쒕줈 臾띠뒿?덈떎.",
-          "- 怨쇱젙???ъ쭊? ?щ씪?대뱶濡?臾띠뒿?덈떎.",
-          "- ?⑥씪 ?ъ쭊 ?쒓렇瑜?怨쇰룄?섍쾶 諛섎났?섏? ?딆뒿?덈떎.",
+          "사진 배치 규칙:",
+          "- 업로드 순서와 사진 번호를 유지하고 모든 사진을 최소 1회 포함합니다.",
+          "- 비슷한 사진은 2~4장씩 그리드로 묶습니다.",
+          "- 과정형 사진은 슬라이드로 묶습니다.",
+          "- 단일 사진 태그를 과도하게 반복하지 않습니다.",
         ].join("\n"),
       });
 
@@ -509,7 +542,7 @@ app.post("/api/generate", (req, res) => {
         60000
       );
 
-      const blogContent = blogResponse.text || "# 釉붾줈洹?珥덉븞\n\n珥덉븞???앹꽦?섏? 紐삵뻽?듬땲?? ?낅젰 ?먮즺瑜?以꾩뿬 ?ㅼ떆 ?쒕룄??二쇱꽭??";
+      const blogContent = blogResponse.text || "# 블로그 초안\n\n초안을 생성하지 못했습니다. 입력 자료를 줄여 다시 시도해 주세요.";
       const pdfBriefing = await generatePdfBriefing(ai, pdfFile as any);
 
       const selectedPhoto = photos[thumbnailIndex] || photos[0] || null;
@@ -544,19 +577,39 @@ app.post("/api/recommend-thumbnail", (req, res) => {
   if (req.is("application/json")) {
     (async () => {
       const provider = normalizeProvider(req.body.aiProvider);
+      const startedAt = Date.now();
+      let hasSelectedPhoto = false;
+      let hasReferenceThumbnail = false;
       try {
         const selectedPhoto = req.body.photo ? await blobToUploadFile(req.body.photo) : null;
         const referenceThumbnail = req.body.referenceThumbnail ? await blobToUploadFile(req.body.referenceThumbnail) : null;
+        hasSelectedPhoto = Boolean(selectedPhoto);
+        hasReferenceThumbnail = Boolean(referenceThumbnail);
         const result = await recommendThumbnailWithProvider({
           provider,
+          userApiKey: req.body.userApiKey,
           selectedPhoto: selectedPhoto as any,
           referenceThumbnail: referenceThumbnail as any,
           blogContent: (req.body.blogContent as string) || "",
           userRequest: (req.body.userRequest as string) || "",
         });
+        logOperation("thumbnail_recommend_success", {
+          provider,
+          model: result.model || "unknown",
+          hasSelectedPhoto,
+          hasReferenceThumbnail,
+          requestMs: Date.now() - startedAt,
+        });
         return res.json({ success: true, ...result });
       } catch (error: any) {
         const friendly = getFriendlyProviderError(error, provider);
+        logOperation("thumbnail_recommend_fail", {
+          provider,
+          status: friendly.status,
+          hasSelectedPhoto,
+          hasReferenceThumbnail,
+          requestMs: Date.now() - startedAt,
+        });
         return res.status(friendly.status).json({ success: false, error: friendly.message });
       }
     })();
@@ -567,7 +620,7 @@ app.post("/api/recommend-thumbnail", (req, res) => {
     if (uploadErr) {
       return res.status(400).json({
         success: false,
-        error: `?뚯씪 ?낅줈??泥섎━ 以??ㅻ쪟媛 諛쒖깮?덉뒿?덈떎: ${uploadErr.message}`,
+        error: `파일 업로드 처리 중 오류가 발생했습니다: ${uploadErr.message}`,
       });
     }
 
@@ -578,6 +631,7 @@ app.post("/api/recommend-thumbnail", (req, res) => {
       const providerReferenceThumbnail = req.body.referenceThumbnail ? await blobToUploadFile(req.body.referenceThumbnail) : providerFiles?.referenceThumbnail?.[0] || null;
       const result = await recommendThumbnailWithProvider({
         provider,
+        userApiKey: req.body.userApiKey,
         selectedPhoto: providerSelectedPhoto as any,
         referenceThumbnail: providerReferenceThumbnail as any,
         blogContent: (req.body.blogContent as string) || "",
@@ -585,7 +639,8 @@ app.post("/api/recommend-thumbnail", (req, res) => {
       });
       return res.json({ success: true, ...result });
 
-      const ai = getAIClient();
+      const userApiKey = req.body.userApiKey as string | undefined;
+      const ai = getAIClient(userApiKey);
       const files = req.files as { [fieldname: string]: Express.Multer.File[] } | undefined;
       const selectedPhoto = req.body.photo ? await blobToUploadFile(req.body.photo) : files?.photo?.[0] || null;
       const referenceThumbnail = req.body.referenceThumbnail ? await blobToUploadFile(req.body.referenceThumbnail) : files?.referenceThumbnail?.[0] || null;
@@ -613,7 +668,7 @@ app.post("/api/recommend-thumbnail", (req, res) => {
 });
 
 app.use("/api", (_req, res) => {
-  res.status(404).json({ success: false, error: "?붿껌??API 寃쎈줈瑜?李얠쓣 ???놁뒿?덈떎." });
+  res.status(404).json({ success: false, error: "요청한 API 경로를 찾을 수 없습니다." });
 });
 
 app.use((err: any, req: express.Request, res: express.Response, _next: express.NextFunction) => {
@@ -621,7 +676,7 @@ app.use((err: any, req: express.Request, res: express.Response, _next: express.N
   if (req.path.startsWith("/api") && !res.headersSent) {
     return res.status(500).json({
       success: false,
-      error: "?쒕쾭?먯꽌 ?덇린移??딆? ?ㅻ쪟媛 諛쒖깮?덉뒿?덈떎.",
+      error: "서버에서 예기치 않은 오류가 발생했습니다.",
     });
   }
   res.status(500).send("Internal Server Error");

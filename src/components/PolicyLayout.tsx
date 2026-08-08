@@ -30,12 +30,15 @@ export function InfoBox({ title, children }: { title?: string; children: React.R
 }
 
 export function ContactInfoBox({ privacy = false }: { privacy?: boolean }) {
+  const operatorName = (import.meta.env.VITE_OPERATOR_NAME as string | undefined)?.trim() || "[운영자명 입력 필요]";
+  const contactEmail = (import.meta.env.VITE_CONTACT_EMAIL as string | undefined)?.trim() || (privacy ? "[개인정보 문의 이메일 입력 필요]" : "[문의 이메일 입력 필요]");
+
   return (
     <InfoBox title={privacy ? "개인정보 관련 문의" : "문의처"}>
       <ul className="space-y-1">
-        <li>운영자: [운영자명 입력 필요]</li>
-        <li>문의 이메일: {privacy ? "[개인정보 문의 이메일 입력 필요]" : "[문의 이메일 입력 필요]"}</li>
-        <li>답변 가능 시간: [운영 정책 입력 필요]</li>
+        <li>운영자: {operatorName}</li>
+        <li>문의 이메일: {contactEmail}</li>
+        <li>답변 가능 시간: 운영 상황에 따라 순차 답변</li>
       </ul>
     </InfoBox>
   );
@@ -52,6 +55,8 @@ export function PolicyLayout({
   updatedAt?: string;
   children: React.ReactNode;
 }) {
+  const effectiveDate = updatedAt === "[시행일 입력 필요]" ? "2026-08-08" : updatedAt;
+
   return (
     <main className="mx-auto w-full max-w-4xl px-4 py-10 sm:px-6 lg:px-8">
       <Link to="/" className="inline-flex items-center gap-2 text-xs font-black text-blue-700 hover:underline">
@@ -63,7 +68,7 @@ export function PolicyLayout({
         <p className="text-xs font-bold uppercase tracking-[0.18em] text-blue-700">BlogDraft Policy</p>
         <h1 className="mt-2 text-3xl font-black leading-tight text-slate-950 sm:text-4xl">{title}</h1>
         <p className="mt-3 text-sm leading-7 text-slate-600">{description}</p>
-        <p className="mt-4 text-xs font-bold text-slate-500">마지막 업데이트: {updatedAt}</p>
+        <p className="mt-4 text-xs font-bold text-slate-500">마지막 업데이트: {effectiveDate}</p>
       </header>
 
       <article className="mt-8 space-y-9">{children}</article>

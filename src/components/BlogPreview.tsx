@@ -3,6 +3,7 @@ import ReactMarkdown from "react-markdown";
 import remarkGfm from "remark-gfm";
 import { Check, ClipboardCheck, Copy, Download, FileText, ImageIcon } from "lucide-react";
 import { UploadedPhoto } from "../types";
+import { trackEvent } from "../analytics";
 
 interface BlogPreviewProps {
   content: string;
@@ -60,6 +61,7 @@ export const BlogPreview: React.FC<BlogPreviewProps> = ({ content, onContentChan
     if (!copyEnabled) return;
     await navigator.clipboard.writeText(content);
     setCopied(true);
+    trackEvent("copy_result", { content_type: "blog_markdown", checked_count: checkedItems.length, photo_count: photos.length });
     setTimeout(() => setCopied(false), 2000);
   };
 
@@ -71,6 +73,7 @@ export const BlogPreview: React.FC<BlogPreviewProps> = ({ content, onContentChan
     link.download = `blogdraft_${new Date().toISOString().slice(0, 10)}.md`;
     link.click();
     URL.revokeObjectURL(url);
+    trackEvent("copy_result", { action: "download_markdown", checked_count: checkedItems.length, photo_count: photos.length });
   };
 
   const renderPhotoTile = (photoNum: number, compact: boolean) => {
@@ -181,6 +184,7 @@ export const BlogPreview: React.FC<BlogPreviewProps> = ({ content, onContentChan
             onChange={(event) => onContentChange(event.target.value)}
             rows={18}
             className="w-full resize-y rounded-lg border border-slate-200 bg-slate-50 p-4 font-mono text-sm leading-6 text-slate-800 outline-none focus:border-blue-400 focus:ring-2 focus:ring-blue-100"
+            data-clarity-mask="true"
           />
         ) : (
           <div className="rounded-lg border border-slate-100 bg-slate-50 p-4 text-xs leading-5 text-slate-500">
@@ -205,7 +209,7 @@ export const BlogPreview: React.FC<BlogPreviewProps> = ({ content, onContentChan
         <p className="mt-3 text-xs font-medium leading-5 text-slate-700">AI가 만든 초안에 나의 경험과 표현을 더하면 더욱 자연스럽고 가치 있는 콘텐츠가 됩니다.</p>
       </section>
 
-      <section className="rounded-lg border border-slate-200 bg-white p-5 sm:p-7">
+      <section className="rounded-lg border border-slate-200 bg-white p-5 sm:p-7" data-clarity-mask="true">
         {renderContentWithPhotos()}
       </section>
     </div>

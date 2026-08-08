@@ -9,6 +9,9 @@ interface AdSlotProps {
 }
 
 export const AdSlot: React.FC<AdSlotProps> = ({ width, height, label, className = "" }) => {
+  const showPlaceholder = !import.meta.env.PROD || import.meta.env.VITE_SHOW_AD_PLACEHOLDERS === "true";
+  if (!showPlaceholder) return null;
+
   return (
     <div
       className={`flex w-full items-center justify-center rounded-lg border border-dashed border-slate-300 bg-slate-50/80 text-slate-400 ${className}`}

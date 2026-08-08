@@ -15,6 +15,7 @@ import {
   Type,
 } from "lucide-react";
 import { ThumbnailData, UploadedPhoto } from "../types";
+import { trackEvent } from "../analytics";
 
 interface ThumbnailPreviewProps {
   thumbnailData: ThumbnailData;
@@ -137,6 +138,7 @@ export const ThumbnailPreview: React.FC<ThumbnailPreviewProps> = ({ thumbnailDat
         setIsRecommending(true);
         await onRecommendCopy();
         setStatusMessage("썸네일 문구를 다시 추천했습니다.");
+        trackEvent("thumbnail_edit", { action: "recommend_copy" });
         return;
       } catch (error: any) {
         setStatusMessage(error?.message || "썸네일 문구 재추천 중 오류가 발생했습니다. 잠시 후 다시 시도해 주세요.");
@@ -150,6 +152,7 @@ export const ThumbnailPreview: React.FC<ThumbnailPreviewProps> = ({ thumbnailDat
     const [main, sub] = RECOMMENDED_COPY[nextIndex];
     setThumbnailData((prev) => ({ ...prev, thumbnail_main_text: main, thumbnail_sub_text: sub }));
     setStatusMessage("썸네일 문구 후보를 바꿨습니다.");
+    trackEvent("thumbnail_edit", { action: "cycle_copy" });
   };
 
   const handleDownloadThumbnail = async () => {
@@ -163,6 +166,7 @@ export const ThumbnailPreview: React.FC<ThumbnailPreviewProps> = ({ thumbnailDat
       link.download = `blogdraft_thumbnail_${Date.now()}.png`;
       link.click();
       setStatusMessage("썸네일 이미지를 저장했습니다.");
+      trackEvent("download_thumbnail", { aspect_ratio: aspectRatio, layout_position: thumbnailData.layout_position });
     } catch {
       setStatusMessage("썸네일 이미지 저장 중 오류가 발생했습니다. 잠시 후 다시 시도해 주세요.");
     } finally {
@@ -213,11 +217,11 @@ export const ThumbnailPreview: React.FC<ThumbnailPreviewProps> = ({ thumbnailDat
         <div className="grid gap-3 sm:grid-cols-2">
           <label className="space-y-1 text-xs font-bold text-slate-700">
             메인 문구
-            <input value={thumbnailData.thumbnail_main_text} onChange={(event) => setThumbnailData((prev) => ({ ...prev, thumbnail_main_text: event.target.value }))} className="w-full rounded-lg border border-slate-200 bg-slate-50 px-3 py-2 text-sm font-black outline-none focus:border-blue-400 focus:ring-2 focus:ring-blue-100" />
+            <input value={thumbnailData.thumbnail_main_text} onChange={(event) => setThumbnailData((prev) => ({ ...prev, thumbnail_main_text: event.target.value }))} className="w-full rounded-lg border border-slate-200 bg-slate-50 px-3 py-2 text-sm font-black outline-none focus:border-blue-400 focus:ring-2 focus:ring-blue-100" data-clarity-mask="true" />
           </label>
           <label className="space-y-1 text-xs font-bold text-slate-700">
             서브 문구
-            <input value={thumbnailData.thumbnail_sub_text} onChange={(event) => setThumbnailData((prev) => ({ ...prev, thumbnail_sub_text: event.target.value }))} className="w-full rounded-lg border border-slate-200 bg-slate-50 px-3 py-2 text-sm outline-none focus:border-blue-400 focus:ring-2 focus:ring-blue-100" />
+            <input value={thumbnailData.thumbnail_sub_text} onChange={(event) => setThumbnailData((prev) => ({ ...prev, thumbnail_sub_text: event.target.value }))} className="w-full rounded-lg border border-slate-200 bg-slate-50 px-3 py-2 text-sm outline-none focus:border-blue-400 focus:ring-2 focus:ring-blue-100" data-clarity-mask="true" />
           </label>
         </div>
 
@@ -272,7 +276,7 @@ export const ThumbnailPreview: React.FC<ThumbnailPreviewProps> = ({ thumbnailDat
       </section>
 
       <section className="flex flex-col items-center gap-4">
-        <div ref={containerRef} className={`relative w-full overflow-hidden rounded-lg bg-slate-950 shadow-xl ${aspectClasses[aspectRatio]}`}>
+        <div ref={containerRef} className={`relative w-full overflow-hidden rounded-lg bg-slate-950 shadow-xl ${aspectClasses[aspectRatio]}`} data-clarity-mask="true">
           {selectedPhoto ? (
             <img src={selectedPhoto.previewUrl} alt="썸네일 배경 이미지" className="h-full w-full object-cover" />
           ) : (

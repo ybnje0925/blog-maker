@@ -16,7 +16,7 @@ const SITE_NAME = "BlogDraft";
 const DEFAULT_OG_IMAGE = "/og-default.svg";
 
 export function getClientBaseUrl() {
-  const envBaseUrl = import.meta.env.VITE_BASE_URL as string | undefined;
+  const envBaseUrl = (import.meta.env.VITE_SITE_URL || import.meta.env.VITE_BASE_URL) as string | undefined;
   if (envBaseUrl?.trim()) return envBaseUrl.trim().replace(/\/$/, "");
   if (typeof window !== "undefined") return window.location.origin;
   return "";

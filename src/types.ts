@@ -46,5 +46,9 @@ export interface FormState {
   userRequest: string;
   thumbnailIndex: number;
   aiProvider: AIProvider;
+  openaiApiKey: string;
+  geminiApiKey: string;
+  rememberOpenaiApiKey: boolean;
+  rememberGeminiApiKey: boolean;
   privacyConsent: boolean;
 }
