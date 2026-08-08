@@ -25,6 +25,7 @@ export default async function handler(req: any, res: any) {
 
     const result = await generateBlogWithProvider({
       provider,
+      userApiKey: req.body.userApiKey,
       photos,
       pdfFile,
       referenceThumbnail,

@@ -19,7 +19,10 @@ export function resolveProviderApiKey(provider: AIProviderName, userApiKey?: str
     return { apiKey: trimmedUserKey, apiKeySource: "user" as ApiKeySource };
   }
 
-  const serverKey = process.env.GEMINI_API_KEY;
+  const serverKey =
+    process.env.GEMINI_API_KEY ||
+    process.env.GOOGLE_GENERATIVE_AI_API_KEY ||
+    process.env.GOOGLE_API_KEY;
   if (!serverKey?.trim()) {
     throw new Error("GEMINI_SERVER_KEY_MISSING: Gemini 서버 API를 사용할 수 없습니다. 계속 이용하려면 개인 Gemini API Key를 입력해 주세요.");
   }

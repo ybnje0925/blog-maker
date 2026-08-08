@@ -179,6 +179,19 @@ function getUploadBytes(state: FormState) {
   );
 }
 
+async function parseJsonResponse(res: Response) {
+  const rawText = await res.text();
+  try {
+    return JSON.parse(rawText);
+  } catch {
+    if (res.status === 413) {
+      throw new Error("업로드 용량이 서버 요청 제한을 넘었습니다. 사진 수를 줄이거나 PDF를 더 작은 파일로 올려 주세요.");
+    }
+    throw new Error(`서버가 JSON 응답을 반환하지 않았습니다. HTTP ${res.status}`);
+  }
+}
+
+
 const initialFormState: FormState = {
   photos: [],
   pdfFile: null,
@@ -415,6 +428,7 @@ function HomePage() {
       if (uploadBytes > SERVER_SAFE_TOTAL_BYTES) {
         throw new Error(`서버 업로드 제한을 넘었습니다. 현재 ${formatUploadBytes(uploadBytes)}이며, ${formatUploadBytes(SERVER_SAFE_TOTAL_BYTES)} 이하로 줄여 주세요.`);
       }
+
       const filesToUpload = [
         ...formState.photos.map((photo, index) => ({ kind: "photo", file: photo.file, order: index })),
         ...(formState.pdfFile ? [{ kind: "pdf", file: formState.pdfFile, order: 0 }] : []),
@@ -449,9 +463,7 @@ function HomePage() {
       };
       const requestBody = JSON.stringify(requestPayload);
       if (new Blob([requestBody]).size > MAX_GENERATE_REQUEST_BODY_BYTES) {
-        throw new Error(
-          "요청 본문이 비정상적으로 큽니다. 임시 파일 업로드가 정상 처리되지 않았을 수 있으니 새로고침 후 다시 시도해 주세요."
-        );
+        throw new Error("요청 본문이 비정상적으로 큽니다. 임시 파일 업로드가 정상 처리되지 않았을 수 있으니 새로고침 후 다시 시도해 주세요.");
       }
 
       const res = await fetch("/api/generate", {
@@ -459,16 +471,7 @@ function HomePage() {
         headers: { "Content-Type": "application/json" },
         body: requestBody,
       });
-      const rawText = await res.text();
-      let data: any;
-      try {
-        data = JSON.parse(rawText);
-      } catch {
-        if (res.status === 413) {
-          throw new Error("업로드 용량이 서버 요청 제한을 넘었습니다. 사진 수를 줄이거나 PDF를 더 작은 파일로 올려 주세요.");
-        }
-        throw new Error(`서버가 JSON 응답을 반환하지 않았습니다. HTTP ${res.status}`);
-      }
+      const data = await parseJsonResponse(res);
 
       if (!res.ok || !data.success) {
         throw new Error(data.error || "블로그 초안 생성 중 오류가 발생했습니다.");
@@ -524,9 +527,7 @@ function HomePage() {
       };
       const requestBody = JSON.stringify(requestPayload);
       if (new Blob([requestBody]).size > MAX_GENERATE_REQUEST_BODY_BYTES) {
-        throw new Error(
-          "요청 본문이 비정상적으로 큽니다. 임시 파일 업로드가 정상 처리되지 않았을 수 있으니 새로고침 후 다시 시도해 주세요."
-        );
+        throw new Error("요청 본문이 비정상적으로 큽니다. 임시 파일 업로드가 정상 처리되지 않았을 수 있으니 새로고침 후 다시 시도해 주세요.");
       }
 
       const res = await fetch("/api/recommend-thumbnail", {
@@ -534,7 +535,7 @@ function HomePage() {
         headers: { "Content-Type": "application/json" },
         body: requestBody,
       });
-      const data = await res.json();
+      const data = await parseJsonResponse(res);
       if (!res.ok || !data.success) {
         throw new Error(data.error || "썸네일 문구 재추천 중 오류가 발생했습니다.");
       }
@@ -546,7 +547,6 @@ function HomePage() {
       await deleteBlobFiles(temporaryBlobs);
     }
   };
-
   return (
     <>
       <SEO
