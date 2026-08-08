@@ -3,8 +3,8 @@ import path from "path";
 import multer from "multer";
 import { GoogleGenAI, Type } from "@google/genai";
 import dotenv from "dotenv";
-import { del } from "@vercel/blob";
-import { handleUpload } from "@vercel/blob/client";
+import { del, issueSignedToken } from "@vercel/blob";
+import { handleUploadPresigned } from "@vercel/blob/client";
 import { blobListToUploadFiles, blobToUploadFile } from "./src/server/blobFiles";
 import { buildRobotsTxt, buildSitemapXml, normalizeBaseUrl } from "./src/sitemap";
 import { generateBlogWithProvider, getFriendlyProviderError, normalizeProvider, recommendThumbnailWithProvider } from "./src/server/ai/provider";
@@ -204,28 +204,85 @@ app.get("/api/health", (_req, res) => {
   res.json({ status: "ok", message: "BlogDraft backend is running" });
 });
 
+const ALLOWED_BLOB_CONTENT_TYPES = ["image/jpeg", "image/png", "image/webp", "application/pdf"];
+
+function getHeaderValue(req: express.Request, name: string) {
+  const value = req.headers[name.toLowerCase()];
+  if (Array.isArray(value)) return value[0];
+  return typeof value === "string" ? value : undefined;
+}
+
+function getOidcToken(req: express.Request) {
+  return getHeaderValue(req, "x-vercel-oidc-token")?.trim() || process.env.VERCEL_OIDC_TOKEN?.trim();
+}
+
+function getBlobAuthOptions(req: express.Request) {
+  return {
+    oidcToken: getOidcToken(req),
+    storeId: process.env.BLOB_STORE_ID?.trim(),
+  };
+}
+
+function getUploadPayload(clientPayload: string | null) {
+  return clientPayload ? JSON.parse(clientPayload) : {};
+}
+
 app.post("/api/blob-upload", async (req, res) => {
   try {
-    const jsonResponse = await handleUpload({
+    const oidcToken = getOidcToken(req);
+    const storeId = process.env.BLOB_STORE_ID?.trim();
+
+    logOperation("blob_upload_token_request", {
+      type: req.body?.type,
+      hasBlobStoreId: Boolean(storeId),
+      hasVercelOidcToken: Boolean(process.env.VERCEL_OIDC_TOKEN),
+      vercelEnv: process.env.VERCEL_ENV || "local",
+    });
+    logOperation("blob_oidc_check", {
+      hasVercelOidcHeader: Boolean(getHeaderValue(req, "x-vercel-oidc-token")),
+    });
+
+    if (!oidcToken || !storeId) {
+      throw new Error("Vercel Blob OIDC token or BLOB_STORE_ID is missing.");
+    }
+
+    const jsonResponse = await handleUploadPresigned({
       body: req.body,
       request: req,
-      onBeforeGenerateToken: async (_pathname, clientPayload) => {
-        const payload = clientPayload ? JSON.parse(clientPayload) : {};
+      getSignedToken: async (pathname, clientPayload) => {
+        const payload = getUploadPayload(clientPayload);
+        const tokenPayload = JSON.stringify({
+          kind: payload.kind || "file",
+          originalName: payload.originalName || "",
+          order: payload.order ?? null,
+        });
+
         return {
-          allowedContentTypes: ["image/jpeg", "image/png", "image/webp", "application/pdf"],
-          addRandomSuffix: true,
-          tokenPayload: JSON.stringify({
-            kind: payload.kind || "file",
-            originalName: payload.originalName || "",
-            order: payload.order ?? null,
+          token: await issueSignedToken({
+            pathname,
+            operations: ["put"],
+            allowedContentTypes: ALLOWED_BLOB_CONTENT_TYPES,
+            oidcToken,
+            storeId,
           }),
+          urlOptions: {
+            allowedContentTypes: ALLOWED_BLOB_CONTENT_TYPES,
+            addRandomSuffix: true,
+            tokenPayload,
+          },
         };
       },
       onUploadCompleted: async () => undefined,
     });
     return res.json(jsonResponse);
   } catch (error: any) {
-    return res.status(400).json({ error: "임시 파일 업로드를 준비하지 못했습니다. 서버 직접 전송 방식으로 다시 시도합니다." });
+    logOperation("blob_upload_token_error", {
+      message: error?.message || String(error),
+      hasBlobStoreId: Boolean(process.env.BLOB_STORE_ID),
+      hasVercelOidcToken: Boolean(process.env.VERCEL_OIDC_TOKEN),
+      vercelEnv: process.env.VERCEL_ENV || "local",
+    });
+    return res.status(400).json({ error: "\uc784\uc2dc \ud30c\uc77c \uc5c5\ub85c\ub4dc\ub97c \uc900\ube44\ud558\uc9c0 \ubabb\ud588\uc2b5\ub2c8\ub2e4. Blob \uc5f0\uacb0 \ub610\ub294 \uc778\uc99d \uc0c1\ud0dc\ub97c \ud655\uc778\ud574 \uc8fc\uc138\uc694." });
   }
 });
 
@@ -387,9 +444,10 @@ app.post("/api/generate", (req, res) => {
       let hasPdf = false;
       let hasReferenceThumbnail = false;
       try {
-        const photos = Array.isArray(req.body.photos) ? await blobListToUploadFiles(req.body.photos) : [];
-        const pdfFile = req.body.pdf ? await blobToUploadFile(req.body.pdf) : null;
-        const referenceThumbnail = req.body.referenceThumbnail ? await blobToUploadFile(req.body.referenceThumbnail) : null;
+        const blobAuthOptions = getBlobAuthOptions(req);
+        const photos = Array.isArray(req.body.photos) ? await blobListToUploadFiles(req.body.photos, blobAuthOptions) : [];
+        const pdfFile = req.body.pdf ? await blobToUploadFile(req.body.pdf, blobAuthOptions) : null;
+        const referenceThumbnail = req.body.referenceThumbnail ? await blobToUploadFile(req.body.referenceThumbnail, blobAuthOptions) : null;
         photoCount = photos.length;
         hasPdf = Boolean(pdfFile);
         hasReferenceThumbnail = Boolean(referenceThumbnail);
@@ -446,10 +504,11 @@ app.post("/api/generate", (req, res) => {
 
     try {
       const provider = normalizeProvider(req.body.aiProvider);
+      const blobAuthOptions = getBlobAuthOptions(req);
       const providerFiles = req.files as { [fieldname: string]: Express.Multer.File[] } | undefined;
-      const providerPhotos = Array.isArray(req.body.photos) ? await blobListToUploadFiles(req.body.photos) : providerFiles?.photos || [];
-      const providerPdfFile = req.body.pdf ? await blobToUploadFile(req.body.pdf) : providerFiles?.pdf?.[0] || null;
-      const providerReferenceThumbnail = req.body.referenceThumbnail ? await blobToUploadFile(req.body.referenceThumbnail) : providerFiles?.referenceThumbnail?.[0] || null;
+      const providerPhotos = Array.isArray(req.body.photos) ? await blobListToUploadFiles(req.body.photos, blobAuthOptions) : providerFiles?.photos || [];
+      const providerPdfFile = req.body.pdf ? await blobToUploadFile(req.body.pdf, blobAuthOptions) : providerFiles?.pdf?.[0] || null;
+      const providerReferenceThumbnail = req.body.referenceThumbnail ? await blobToUploadFile(req.body.referenceThumbnail, blobAuthOptions) : providerFiles?.referenceThumbnail?.[0] || null;
       const result = await generateBlogWithProvider({
         provider,
         userApiKey: req.body.userApiKey,
@@ -467,9 +526,9 @@ app.post("/api/generate", (req, res) => {
       const ai = getAIClient(userApiKey);
 
       const files = req.files as { [fieldname: string]: Express.Multer.File[] } | undefined;
-      const photos = Array.isArray(req.body.photos) ? await blobListToUploadFiles(req.body.photos) : files?.photos || [];
-      const pdfFile = req.body.pdf ? await blobToUploadFile(req.body.pdf) : files?.pdf?.[0] || null;
-      const referenceThumbnail = req.body.referenceThumbnail ? await blobToUploadFile(req.body.referenceThumbnail) : files?.referenceThumbnail?.[0] || null;
+      const photos = Array.isArray(req.body.photos) ? await blobListToUploadFiles(req.body.photos, blobAuthOptions) : files?.photos || [];
+      const pdfFile = req.body.pdf ? await blobToUploadFile(req.body.pdf, blobAuthOptions) : files?.pdf?.[0] || null;
+      const referenceThumbnail = req.body.referenceThumbnail ? await blobToUploadFile(req.body.referenceThumbnail, blobAuthOptions) : files?.referenceThumbnail?.[0] || null;
       const tone = (req.body.tone as string) || "친근한 존댓말";
       const styleLevel = (req.body.styleLevel as string) || "3";
       const userRequest = (req.body.userRequest as string) || "";
@@ -581,8 +640,9 @@ app.post("/api/recommend-thumbnail", (req, res) => {
       let hasSelectedPhoto = false;
       let hasReferenceThumbnail = false;
       try {
-        const selectedPhoto = req.body.photo ? await blobToUploadFile(req.body.photo) : null;
-        const referenceThumbnail = req.body.referenceThumbnail ? await blobToUploadFile(req.body.referenceThumbnail) : null;
+        const blobAuthOptions = getBlobAuthOptions(req);
+        const selectedPhoto = req.body.photo ? await blobToUploadFile(req.body.photo, blobAuthOptions) : null;
+        const referenceThumbnail = req.body.referenceThumbnail ? await blobToUploadFile(req.body.referenceThumbnail, blobAuthOptions) : null;
         hasSelectedPhoto = Boolean(selectedPhoto);
         hasReferenceThumbnail = Boolean(referenceThumbnail);
         const result = await recommendThumbnailWithProvider({
@@ -626,9 +686,10 @@ app.post("/api/recommend-thumbnail", (req, res) => {
 
     try {
       const provider = normalizeProvider(req.body.aiProvider);
+      const blobAuthOptions = getBlobAuthOptions(req);
       const providerFiles = req.files as { [fieldname: string]: Express.Multer.File[] } | undefined;
-      const providerSelectedPhoto = req.body.photo ? await blobToUploadFile(req.body.photo) : providerFiles?.photo?.[0] || null;
-      const providerReferenceThumbnail = req.body.referenceThumbnail ? await blobToUploadFile(req.body.referenceThumbnail) : providerFiles?.referenceThumbnail?.[0] || null;
+      const providerSelectedPhoto = req.body.photo ? await blobToUploadFile(req.body.photo, blobAuthOptions) : providerFiles?.photo?.[0] || null;
+      const providerReferenceThumbnail = req.body.referenceThumbnail ? await blobToUploadFile(req.body.referenceThumbnail, blobAuthOptions) : providerFiles?.referenceThumbnail?.[0] || null;
       const result = await recommendThumbnailWithProvider({
         provider,
         userApiKey: req.body.userApiKey,
@@ -642,8 +703,8 @@ app.post("/api/recommend-thumbnail", (req, res) => {
       const userApiKey = req.body.userApiKey as string | undefined;
       const ai = getAIClient(userApiKey);
       const files = req.files as { [fieldname: string]: Express.Multer.File[] } | undefined;
-      const selectedPhoto = req.body.photo ? await blobToUploadFile(req.body.photo) : files?.photo?.[0] || null;
-      const referenceThumbnail = req.body.referenceThumbnail ? await blobToUploadFile(req.body.referenceThumbnail) : files?.referenceThumbnail?.[0] || null;
+      const selectedPhoto = req.body.photo ? await blobToUploadFile(req.body.photo, blobAuthOptions) : files?.photo?.[0] || null;
+      const referenceThumbnail = req.body.referenceThumbnail ? await blobToUploadFile(req.body.referenceThumbnail, blobAuthOptions) : files?.referenceThumbnail?.[0] || null;
       const blogContent = (req.body.blogContent as string) || "";
       const userRequest = (req.body.userRequest as string) || "";
 

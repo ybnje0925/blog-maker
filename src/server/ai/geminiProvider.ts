@@ -1,8 +1,8 @@
 import { GoogleGenAI, Type } from "@google/genai";
-import { ThumbnailData } from "../../types";
-import { buildBlogUserPrompt, buildThumbnailUserPrompt } from "./prompts/commonBlogPrompt";
-import { GEMINI_BLOG_PROMPT, GEMINI_THUMBNAIL_PROMPT } from "./prompts/geminiBlogPrompt";
-import { AIProvider, BlogGenerationInput, InMemoryUploadFile } from "./types";
+import { ThumbnailData } from "../../types.js";
+import { buildBlogUserPrompt, buildThumbnailUserPrompt } from "./prompts/commonBlogPrompt.js";
+import { GEMINI_BLOG_PROMPT, GEMINI_THUMBNAIL_PROMPT } from "./prompts/geminiBlogPrompt.js";
+import { AIProvider, BlogGenerationInput, InMemoryUploadFile } from "./types.js";
 
 export const GEMINI_DEFAULT_MODEL = "gemini-2.5-flash";
 const GEMINI_MODEL_CANDIDATES = Array.from(

@@ -1,4 +1,4 @@
-import { upload } from "@vercel/blob/client";
+import { uploadPresigned } from "@vercel/blob/client";
 import { BlobFileMetadata } from "./types";
 
 export interface BlobUploadProgress {
@@ -27,7 +27,7 @@ export async function uploadFileToBlob(
   onProgress?: (progress: BlobUploadProgress) => void
 ): Promise<BlobFileMetadata> {
   try {
-    const blob = await upload(uploadPath(kind, file.name, index), file, {
+    const blob = await uploadPresigned(uploadPath(kind, file.name, index), file, {
       access: "public",
       contentType: file.type,
       handleUploadUrl: "/api/blob-upload",

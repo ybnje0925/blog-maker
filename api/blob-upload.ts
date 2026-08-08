@@ -1,4 +1,7 @@
-import { handleUpload, type HandleUploadBody } from "@vercel/blob/client";
+import { issueSignedToken } from "@vercel/blob";
+import { handleUploadPresigned, type HandleUploadPresignedBody } from "@vercel/blob/client";
+
+const ALLOWED_CONTENT_TYPES = ["image/jpeg", "image/png", "image/webp", "application/pdf"];
 
 export const config = {
   api: {
@@ -8,12 +11,12 @@ export const config = {
   },
 };
 
-function normalizeUploadBody(body: unknown): HandleUploadBody {
-  if (typeof body === "string") return JSON.parse(body) as HandleUploadBody;
-  return body as HandleUploadBody;
+function normalizeUploadBody(body: unknown): HandleUploadPresignedBody {
+  if (typeof body === "string") return JSON.parse(body) as HandleUploadPresignedBody;
+  return body as HandleUploadPresignedBody;
 }
 
-async function readUploadBody(req: any): Promise<HandleUploadBody> {
+async function readUploadBody(req: any): Promise<HandleUploadPresignedBody> {
   if (req.body) return normalizeUploadBody(req.body);
 
   const chunks: Buffer[] = [];
@@ -25,6 +28,24 @@ async function readUploadBody(req: any): Promise<HandleUploadBody> {
   return normalizeUploadBody(rawBody);
 }
 
+function getHeaderValue(req: any, name: string) {
+  const value = req.headers?.[name.toLowerCase()] ?? req.headers?.[name];
+  if (Array.isArray(value)) return value[0];
+  return typeof value === "string" ? value : undefined;
+}
+
+function getOidcToken(req: any) {
+  return getHeaderValue(req, "x-vercel-oidc-token")?.trim() || process.env.VERCEL_OIDC_TOKEN?.trim();
+}
+
+function getBlobStoreId() {
+  return process.env.BLOB_STORE_ID?.trim();
+}
+
+function getUploadPayload(clientPayload: string | null) {
+  return clientPayload ? JSON.parse(clientPayload) : {};
+}
+
 export default async function handler(req: any, res: any) {
   if (req.method !== "POST") {
     return res.status(405).json({ error: "POST 요청만 지원합니다." });
@@ -32,30 +53,47 @@ export default async function handler(req: any, res: any) {
 
   try {
     const body = await readUploadBody(req);
+    const oidcToken = getOidcToken(req);
+    const storeId = getBlobStoreId();
+
     console.info("blob_upload_token_request", {
       type: (body as any)?.type,
-      hasBlobStoreId: Boolean(process.env.BLOB_STORE_ID),
+      hasBlobStoreId: Boolean(storeId),
       hasVercelOidcToken: Boolean(process.env.VERCEL_OIDC_TOKEN),
       vercelEnv: process.env.VERCEL_ENV || "local",
     });
     console.info("blob_oidc_check", {
-      hasVercelOidcHeader: Boolean(req.headers["x-vercel-oidc-token"]),
+      hasVercelOidcHeader: Boolean(getHeaderValue(req, "x-vercel-oidc-token")),
     });
 
-    const jsonResponse = await handleUpload({
+    if (!oidcToken || !storeId) {
+      throw new Error("Vercel Blob OIDC token or BLOB_STORE_ID is missing.");
+    }
+
+    const jsonResponse = await handleUploadPresigned({
       body,
       request: req,
-      onBeforeGenerateToken: async (_pathname, clientPayload) => {
-        const payload = clientPayload ? JSON.parse(clientPayload) : {};
+      getSignedToken: async (pathname, clientPayload) => {
+        const payload = getUploadPayload(clientPayload);
+        const tokenPayload = JSON.stringify({
+          kind: payload.kind || "file",
+          originalName: payload.originalName || "",
+          order: payload.order ?? null,
+        });
 
         return {
-          allowedContentTypes: ["image/jpeg", "image/png", "image/webp", "application/pdf"],
-          addRandomSuffix: true,
-          tokenPayload: JSON.stringify({
-            kind: payload.kind || "file",
-            originalName: payload.originalName || "",
-            order: payload.order ?? null,
+          token: await issueSignedToken({
+            pathname,
+            operations: ["put"],
+            allowedContentTypes: ALLOWED_CONTENT_TYPES,
+            oidcToken,
+            storeId,
           }),
+          urlOptions: {
+            allowedContentTypes: ALLOWED_CONTENT_TYPES,
+            addRandomSuffix: true,
+            tokenPayload,
+          },
         };
       },
       onUploadCompleted: async () => undefined,

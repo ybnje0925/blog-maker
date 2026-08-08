@@ -1,4 +1,4 @@
-import { COMMON_BLOG_PRINCIPLES } from "./commonBlogPrompt";
+import { COMMON_BLOG_PRINCIPLES } from "./commonBlogPrompt.js";
 
 export const GEMINI_BLOG_PROMPT = `
 당신은 BlogDraft의 블로그 초안 편집 도우미입니다.

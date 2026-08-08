@@ -1,5 +1,5 @@
-import { AIProviderName, ApiKeySource, BlogGenerationInput, BlogGenerationResult, ThumbnailRecommendationInput, ThumbnailRecommendationResult } from "./types";
-import { createGeminiProvider, GEMINI_DEFAULT_MODEL } from "./geminiProvider";
+import { AIProviderName, ApiKeySource, BlogGenerationInput, BlogGenerationResult, ThumbnailRecommendationInput, ThumbnailRecommendationResult } from "./types.js";
+import { createGeminiProvider, GEMINI_DEFAULT_MODEL } from "./geminiProvider.js";
 
 export const DEFAULT_MODELS = {
   gemini: GEMINI_DEFAULT_MODEL,

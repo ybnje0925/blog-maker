@@ -1,4 +1,4 @@
-import { ThumbnailData } from "../../types";
+import { ThumbnailData } from "../../types.js";
 
 export type AIProviderName = "openai" | "gemini";
 export type ApiKeySource = "user" | "server";

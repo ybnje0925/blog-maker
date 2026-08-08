@@ -1,5 +1,5 @@
-import { blobListToUploadFiles, blobToUploadFile } from "../src/server/blobFiles";
-import { generateBlogWithProvider, getFriendlyProviderError, normalizeProvider } from "../src/server/ai/provider";
+import { blobListToUploadFiles, blobToUploadFile } from "../src/server/blobFiles.js";
+import { generateBlogWithProvider, getFriendlyProviderError, normalizeProvider } from "../src/server/ai/provider.js";
 
 export const config = {
   api: {
@@ -10,6 +10,19 @@ export const config = {
   maxDuration: 300,
 };
 
+function getHeaderValue(req: any, name: string) {
+  const value = req.headers?.[name.toLowerCase()] ?? req.headers?.[name];
+  if (Array.isArray(value)) return value[0];
+  return typeof value === "string" ? value : undefined;
+}
+
+function getBlobAuthOptions(req: any) {
+  return {
+    oidcToken: getHeaderValue(req, "x-vercel-oidc-token")?.trim() || process.env.VERCEL_OIDC_TOKEN?.trim(),
+    storeId: process.env.BLOB_STORE_ID?.trim(),
+  };
+}
+
 export default async function handler(req: any, res: any) {
   if (req.method !== "POST") {
     return res.status(405).json({ success: false, error: "POST 요청만 지원합니다." });
@@ -18,9 +31,10 @@ export default async function handler(req: any, res: any) {
   const provider = normalizeProvider(req.body.aiProvider);
 
   try {
-    const photos = await blobListToUploadFiles(req.body.photos || []);
-    const pdfFile = req.body.pdf ? await blobToUploadFile(req.body.pdf) : null;
-    const referenceThumbnail = req.body.referenceThumbnail ? await blobToUploadFile(req.body.referenceThumbnail) : null;
+    const blobAuthOptions = getBlobAuthOptions(req);
+    const photos = await blobListToUploadFiles(req.body.photos || [], blobAuthOptions);
+    const pdfFile = req.body.pdf ? await blobToUploadFile(req.body.pdf, blobAuthOptions) : null;
+    const referenceThumbnail = req.body.referenceThumbnail ? await blobToUploadFile(req.body.referenceThumbnail, blobAuthOptions) : null;
     const thumbnailIndex = parseInt(req.body.thumbnailIndex || "0", 10);
 
     const result = await generateBlogWithProvider({

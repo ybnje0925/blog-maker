@@ -13,7 +13,7 @@ export interface SeoProps {
 }
 
 const SITE_NAME = "BlogDraft";
-const DEFAULT_OG_IMAGE = "/og-default.svg";
+const DEFAULT_OG_IMAGE = "/og-blogdraft.png";
 
 export function getClientBaseUrl() {
   const envBaseUrl = (import.meta.env.VITE_SITE_URL || import.meta.env.VITE_BASE_URL) as string | undefined;
