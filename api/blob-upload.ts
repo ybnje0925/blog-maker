@@ -38,6 +38,9 @@ export default async function handler(req: any, res: any) {
       hasVercelOidcToken: Boolean(process.env.VERCEL_OIDC_TOKEN),
       vercelEnv: process.env.VERCEL_ENV || "local",
     });
+    console.info("blob_oidc_check", {
+      hasVercelOidcHeader: Boolean(req.headers["x-vercel-oidc-token"]),
+    });
 
     const jsonResponse = await handleUpload({
       body,
